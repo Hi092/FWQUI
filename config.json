@@ -1,0 +1,14 @@
+{
+  "password_hash": "",
+  "features": {
+    "cpu": true,
+    "memory": true,
+    "disk": true,
+    "services": true,
+    "temperature": true,
+    "uptime": true
+  },
+  "remember_days": 30,
+  "svc_hide": [],
+  "svc_order": []
+}

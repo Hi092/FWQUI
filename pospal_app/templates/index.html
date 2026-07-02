@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>一杯TIME</title>
+<style>
+:root {
+  --bg: #f5f5f7;
+  --card: #fff;
+  --text: #1d1d1f;
+  --sub: #86868b;
+  --accent: #0071e3;
+  --green: #34c759;
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --border: #e5e5ea;
+  --radius: 14px;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro", "Helvetica Neue", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 0 0 100px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.header {
+  padding: 20px 20px 16px;
+  text-align: center;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+.header h1 { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: 2px; }
+
+.date-bar {
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px; padding: 16px 20px; background: #fff;
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.date-bar input[type="date"] {
+  font-size: 16px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--text);
+  -webkit-appearance: none;
+}
+.btn {
+  padding: 8px 20px; border-radius: 10px; border: none;
+  font-size: 15px; font-weight: 500; cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:active { background: #0062c4; transform: scale(0.97); }
+.btn-green { background: var(--green); color: #fff; }
+.btn-green:active { background: #2aaa4a; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.container { padding: 16px; max-width: 600px; margin: 0 auto; }
+
+.overview {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 12px; margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--card); border-radius: var(--radius);
+  padding: 16px; text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.stat-card .value { font-size: 28px; font-weight: 700; color: var(--text); }
+.stat-card .label { font-size: 12px; color: var(--sub); margin-top: 4px; }
+.stat-card.highlight .value { color: var(--accent); }
+.stat-card.green .value { color: var(--green); }
+
+.payment-bar {
+  background: var(--card); border-radius: var(--radius);
+  padding: 16px; margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.payment-bar h3 { font-size: 14px; color: var(--sub); margin-bottom: 12px; }
+.payment-items { display: flex; gap: 16px; }
+.payment-item { flex:1; text-align: center; }
+.payment-item .amount { font-size: 22px; font-weight: 700; }
+.payment-item .type { font-size: 12px; color: var(--sub); margin-top: 2px; }
+.payment-item.wechat .amount { color: #07c160; }
+.payment-item.cash .amount { color: var(--orange); }
+
+.verify-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 10px; border-radius: 20px;
+  font-size: 12px; font-weight: 500;
+  margin-top: 8px;
+}
+.verify-badge.ok { background: #e8f7ef; color: var(--green); }
+.verify-badge.warn { background: #fff3e0; color: var(--orange); }
+
+.table-card {
+  background: var(--card); border-radius: var(--radius);
+  overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.table-card h3 {
+  font-size: 14px; color: var(--sub);
+  padding: 16px 16px 12px;
+}
+.product-table { width: 100%; border-collapse: collapse; }
+.product-table th {
+  background: #f9f9fb; font-size: 12px; font-weight: 600;
+  color: var(--sub); padding: 10px 8px; text-align: center;
+  border-bottom: 1px solid var(--border);
+}
+.product-table td {
+  font-size: 14px; padding: 10px 8px;
+  text-align: center; border-bottom: 1px solid #f2f2f7;
+}
+.product-table tr:last-child td { border-bottom: none; }
+.product-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.product-table .name { text-align: left; font-weight: 500; }
+
+.bottom-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  padding: 12px 20px; background: rgba(255,255,255,0.95);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+  display: flex; gap: 12px; justify-content: center;
+}
+.bottom-bar .btn { flex: 1; max-width: 200px; padding: 12px; font-size: 16px; }
+
+.loading {
+  text-align: center; padding: 60px 20px; color: var(--sub);
+}
+.loading .spinner {
+  width: 32px; height: 32px; border: 3px solid var(--border);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 16px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.error-msg {
+  text-align: center; padding: 40px 20px;
+  color: var(--red); font-size: 15px;
+}
+
+.empty { text-align: center; padding: 40px; color: var(--sub); font-size: 14px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>一杯TIME</h1>
+</div>
+
+<div class="date-bar">
+  <input type="date" id="dateInput" value="{{ today }}">
+  <button class="btn btn-primary" onclick="loadReport()">查询</button>
+</div>
+
+<div class="container" id="main">
+  <div class="empty" style="padding:80px 20px;">
+    <div style="font-size:16px;color:#86868b;">选择日期，点击「查询」查看销售数据</div>
+  </div>
+</div>
+
+<div class="bottom-bar" id="bottomBar" style="display:none;">
+  <button class="btn btn-primary" onclick="loadReport()">刷新</button>
+  <button class="btn btn-green" onclick="downloadReport()">下载 Excel</button>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+let currentDate = '';
+let isLoading = false;
+
+async function loadReport() {
+  if (isLoading) return;
+  isLoading = true;
+  const date = $('#dateInput').value;
+  currentDate = date;
+
+  $('#main').innerHTML = '<div class="loading"><div class="spinner"></div>正在获取数据...</div>';
+  $('#bottomBar').style.display = 'none';
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 60000);
+    const resp = await fetch('/api/report?date=' + date + '&refresh=1', { signal: controller.signal });
+    clearTimeout(timer);
+    const data = await resp.json();
+
+    if (data.error && !data.products) {
+      $('#main').innerHTML = '<div class="error-msg">' + data.error + '</div>';
+      return;
+    }
+
+    renderDashboard(data);
+    $('#bottomBar').style.display = 'flex';
+  } catch(e) {
+    var msg = e.name === 'AbortError' ? '请求超时，请检查网络后重试' : '请求失败: ' + e.message;
+    $('#main').innerHTML = '<div class="error-msg">' + msg + '</div>';
+  } finally {
+    isLoading = false;
+  }
+}
+
+function renderDashboard(data) {
+  var products = data.products;
+  var payment = data.payment;
+  var summary = data.summary;
+  var verifyClass = summary && summary.verified ? 'ok' : 'warn';
+  var verifyText = summary && summary.verified ? '金额核对通过' : '金额有差异';
+
+  var html = '' +
+    '<div class="overview">' +
+      '<div class="stat-card highlight">' +
+        '<div class="value">&yen;' + (payment && payment.total ? payment.total.toFixed(0) : 0) + '</div>' +
+        '<div class="label">营业实收</div>' +
+      '</div>' +
+      '<div class="stat-card">' +
+        '<div class="value">' + (summary ? summary.item_count || 0 : 0) + '</div>' +
+        '<div class="label">商品种类</div>' +
+      '</div>' +
+      '<div class="stat-card green">' +
+        '<div class="value">&yen;' + (payment && payment.wechat ? payment.wechat.toFixed(0) : 0) + '</div>' +
+        '<div class="label">微信收入</div>' +
+      '</div>' +
+      '<div class="stat-card">' +
+        '<div class="value">&yen;' + (payment && payment.cash ? payment.cash.toFixed(0) : 0) + '</div>' +
+        '<div class="label">现金收入</div>' +
+      '</div>' +
+    '</div>' +
+
+    '<div class="payment-bar">' +
+      '<h3>收入构成</h3>' +
+      '<div class="payment-items">' +
+        '<div class="payment-item wechat">' +
+          '<div class="amount">&yen;' + (payment && payment.wechat ? payment.wechat.toFixed(0) : 0) + '</div>' +
+          '<div class="type">微信</div>' +
+        '</div>' +
+        '<div class="payment-item cash">' +
+          '<div class="amount">&yen;' + (payment && payment.cash ? payment.cash.toFixed(0) : 0) + '</div>' +
+          '<div class="type">现金</div>' +
+        '</div>' +
+        '<div class="payment-item">' +
+          '<div class="amount">&yen;' + ((payment ? (payment.wechat || 0) + (payment.cash || 0) : 0)).toFixed(0) + '</div>' +
+          '<div class="type">总额</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="text-align:center">' +
+        '<span class="verify-badge ' + verifyClass + '">' + verifyText + '</span>' +
+      '</div>' +
+    '</div>';
+
+  if (products && products.length > 0) {
+    html += '<div class="table-card">' +
+      '<h3>销售明细（' + products.length + ' 种商品）</h3>' +
+      '<table class="product-table">' +
+        '<thead><tr>' +
+          '<th>#</th><th>商品</th><th>数量</th><th>单价</th><th>金额</th><th>付款方式</th>' +
+        '</tr></thead><tbody>';
+
+    for (var i = 0; i < products.length; i++) {
+      var p = products[i];
+      html += '<tr>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td class="name">' + p.name + '</td>' +
+        '<td class="num">' + p.qty + ' ' + (p.unit || '') + '</td>' +
+        '<td class="num">' + p.unit_price.toFixed(2) + '</td>' +
+        '<td class="num">' + p.total.toFixed(2) + '</td>' +
+        '<td>' + (p.payment || '微信') + '</td>' +
+      '</tr>';
+    }
+
+    var wechat = payment && payment.wechat ? payment.wechat.toFixed(0) : 0;
+    var cash = payment && payment.cash ? payment.cash.toFixed(0) : 0;
+    var total = payment ? ((payment.wechat || 0) + (payment.cash || 0)).toFixed(0) : 0;
+    html += '</tbody></table>' +
+      '<div style="padding:12px 16px;text-align:right;font-weight:600;font-size:14px;color:#333;">' +
+        '微信：' + wechat + '　现金：' + cash + '　合计：' + total +
+      '</div></div>';
+  } else {
+    html += '<div class="empty">暂无销售数据</div>';
+  }
+
+  $('#main').innerHTML = html;
+}
+
+function downloadReport() {
+  if (!currentDate) return;
+  window.location.href = '/api/download?date=' + currentDate;
+}
+
+$('#dateInput').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') loadReport();
+});
+
+window.addEventListener('load', function() {
+  var today = new Date();
+  var y = today.getFullYear();
+  var m = String(today.getMonth() + 1).padStart(2, '0');
+  var d = String(today.getDate()).padStart(2, '0');
+  $('#dateInput').value = y + '-' + m + '-' + d;
+  setTimeout(loadReport, 300);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+[
+  {
+    "id": "filebrowser",
+    "name": "\u7f51\u76d8(FileBrowser)",
+    "port": 8088,
+    "start_cmd": "systemctl start filebrowser.service",
+    "stop_cmd": "systemctl stop filebrowser.service",
+    "check_cmd": "test \"$(systemctl is-active filebrowser.service)\" = \"active\""
+  },
+  {
+    "id": "smb",
+    "name": "\u7f51\u76d8(SMB\u5171\u4eab)",
+    "port": 445,
+    "start_cmd": "systemctl start smbd.service",
+    "stop_cmd": "systemctl stop smbd.service",
+    "check_cmd": "test \"$(systemctl is-active smbd.service)\" = \"active\""
+  },
+  {
+    "id": "pospal",
+    "name": "\u9500\u552e\u65e5\u62a5",
+    "port": 8080,
+    "start_cmd": "systemctl start pospal-web.service",
+    "stop_cmd": "systemctl stop pospal-web.service",
+    "check_cmd": "test \"$(systemctl is-active pospal-web.service)\" = \"active\""
+  },
+  {
+    "id": "tailscale",
+    "name": "Tailscale",
+    "port": null,
+    "start_cmd": "systemctl start tailscaled.service",
+    "stop_cmd": "systemctl stop tailscaled.service",
+    "check_cmd": "test \"$(systemctl is-active tailscaled.service)\" = \"active\""
+  },
+  {
+    "id": "weather",
+    "name": "\u5929\u6c14\u76d1\u63a7",
+    "port": null,
+    "start_cmd": "systemctl start weather-monitor.timer",
+    "stop_cmd": "systemctl stop weather-monitor.timer",
+    "check_cmd": "test $(systemctl is-active weather-monitor.timer) = active"
+  },
+  {
+    "id": "starlink",
+    "name": "Starlink",
+    "port": null,
+    "start_cmd": "systemctl start starlink-sub.service",
+    "stop_cmd": "systemctl stop starlink-sub.service",
+    "check_cmd": "test \"$(systemctl is-active starlink-sub.service)\" = \"active\""
+  },
+  {
+    "id": "monitor",
+    "name": "\u76d1\u63a7\u9762\u677f",
+    "port": 9090,
+    "start_cmd": "systemctl start monitor.service",
+    "stop_cmd": "systemctl stop monitor.service",
+    "check_cmd": "test \"$(systemctl is-active monitor.service)\" = \"active\""
+  },
+  {
+    "id": "company_pc",
+    "name": "\u516c\u53f8\u7535\u8111",
+    "port": null,
+    "type": "remote",
+    "host": "192.168.3.138",
+    "user": "Administrator",
+    "password": "12345678"
+  }
+]

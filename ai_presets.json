@@ -1,0 +1,18 @@
+[
+    {"name":"智谱AI","url":"https://open.bigmodel.cn/api/paas/v4/chat/completions"},
+    {"name":"OpenAI","url":"https://api.openai.com/v1/chat/completions"},
+    {"name":"DeepSeek","url":"https://api.deepseek.com/v1/chat/completions"},
+    {"name":"SiliconFlow","url":"https://api.siliconflow.cn/v1/chat/completions"},
+    {"name":"小米MiMo","url":"https://api.xiaomimimo.com/v1/chat/completions"},
+    {"name":"通义千问","url":"https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"},
+    {"name":"Moonshot","url":"https://api.moonshot.cn/v1/chat/completions"},
+    {"name":"百川","url":"https://api.baichuan-ai.com/v1/chat/completions"},
+    {"name":"阶跃星辰","url":"https://api.stepfun.com/v1/chat/completions"},
+    {"name":"零一万物","url":"https://api.lingyiwanwu.com/v1/chat/completions"},
+    {"name":"讯飞星火","url":"https://spark-api-open.xf-yun.com/v1/chat/completions"},
+    {"name":"MiniMax","url":"https://api.minimax.chat/v1/chat/completions"},
+    {"name":"百度千帆","url":"https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat"},
+    {"name":"Groq","url":"https://api.groq.com/openai/v1/chat/completions"},
+    {"name":"Together","url":"https://api.together.xyz/v1/chat/completions"},
+    {"name":"Mistral","url":"https://api.mistral.ai/v1/chat/completions"}
+]
