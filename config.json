@@ -1,0 +1,28 @@
+{
+  "password_hash": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
+  "features": {
+    "cpu": true,
+    "memory": true,
+    "disk": true,
+    "services": true,
+    "temperature": true,
+    "uptime": true
+  },
+  "remember_days": 30,
+  "svc_hide": [
+    "monitor"
+  ],
+  "svc_order": [
+    "honeygain",
+    "downloads",
+    "company_pc",
+    "pospal",
+    "filebrowser",
+    "smb",
+    "tailscale",
+    "weather",
+    "starlink",
+    "cron",
+    "monitor"
+  ]
+}

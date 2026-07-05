@@ -1,0 +1,8 @@
+*.bak*
+*.log
+*_traffic.json
+*_history.json
+paused.json
+ssl_notify.txt
+__pycache__/
+*.pyc
