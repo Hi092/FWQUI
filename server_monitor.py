@@ -477,9 +477,11 @@ def get_status(features):
         st = meminfo.get('SwapTotal', 0)
         st = meminfo.get('SwapTotal', 0)
         sf = meminfo.get('SwapFree', 0)
-        # Per-device swap details
+        # Per-device swap details（多个zram合并为一个）
         swap_devices = []
         swapon_out = run('swapon --show --bytes --noheadings').strip()
+        zram_total = 0
+        zram_used = 0
         for line in swapon_out.split('\n'):
             if not line.strip(): continue
             parts = line.split()
@@ -490,11 +492,21 @@ def get_status(features):
                 dev_used = int(parts[3])
                 dev_prio = parts[4] if len(parts) > 4 else '0'
                 is_zram = 'zram' in dev_name
-                swap_devices.append({
-                    'name': dev_name, 'type': 'ZRAM' if is_zram else 'Disk',
-                    'size_mb': round(dev_size/1048576), 'used_mb': round(dev_used/1048576),
-                    'percent': round(100*dev_used/max(dev_size,1),1), 'priority': dev_prio
-                })
+                if is_zram:
+                    zram_total += dev_size
+                    zram_used += dev_used
+                else:
+                    swap_devices.append({
+                        'name': dev_name, 'type': 'Disk',
+                        'size_mb': round(dev_size/1048576), 'used_mb': round(dev_used/1048576),
+                        'percent': round(100*dev_used/max(dev_size,1),1), 'priority': dev_prio
+                    })
+        if zram_total > 0:
+            swap_devices.append({
+                'name': 'zram', 'type': 'ZRAM',
+                'size_mb': round(zram_total/1048576), 'used_mb': round(zram_used/1048576),
+                'percent': round(100*zram_used/max(zram_total,1),1), 'priority': '-'
+            })
         status['swap'] = {'total_mb': round(st/1024), 'used_mb': round((st-sf)/1024), 'percent': round(100*(st-sf)/max(st,1),1), 'devices': swap_devices}
 
     if features.get('disk', True):
@@ -662,7 +674,8 @@ _download_lock = threading.Lock()
 _download_queue = []
 _active_download = None
 _dl_counter = [0]
-_ffmpeg_procs = {}  # dl_id -> subprocess.Popen (用于暂停时杀进程)
+_ffmpeg_procs = {}  # dl_id -> subprocess.Popen
+_direct_procs = {}  # dl_id -> subprocess.Popen (curl/aria2c) (用于暂停时杀进程)
 _dl_traffic_bytes = 0  # 下载累计流量
 _DL_TRAFFIC_PERSIST = '/opt/monitor/dl_traffic.json'
 
@@ -1001,10 +1014,23 @@ def _download_direct(dl, url, output_path):
         cmd += " '" + url + "'"
         proc = subprocess.Popen(cmd + " 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
         using_aria2 = False
+    _direct_procs[dl_id] = proc
     last_traffic_check = time.time()
     last_file_size = existing_bytes
+    _last_direct_status_check = time.time()
     for line in proc.stdout:
         line = line.strip()
+        # 检查暂停/取消
+        _now = time.time()
+        if _now - _last_direct_status_check > 0.5:
+            _last_direct_status_check = _now
+            with _download_lock:
+                if dl_id in _downloads:
+                    _s = _downloads[dl_id].get('status', '')
+                    if _s in ('cancelling', 'paused'):
+                        proc.terminate()
+                        _direct_procs.pop(dl_id, None)
+                        raise Exception('用户取消' if _s == 'cancelling' else '用户暂停')
         # aria2c 输出: [DOWN] .... 0.0%  1.2MiB/s 1.2/200MiB 2m30s
         if using_aria2 and 'GB' in line or 'MiB' in line or 'KiB' in line:
             try:
@@ -1048,6 +1074,7 @@ def _download_direct(dl, url, output_path):
             except Exception:
                 pass
     proc.wait()
+    _direct_procs.pop(dl_id, None)
     if proc.returncode == 0:
         size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
         # 补上最后一次增量
@@ -1212,6 +1239,9 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             except Exception:
                 pass
     
+        with _download_lock:
+            if dl_id in _downloads:
+                _downloads[dl_id]['status_detail'] = '正在优化文件...'
     proc.wait()
     stderr_out = proc.stderr.read() if proc.stderr else ''
     _ffmpeg_procs.pop(dl_id, None)
@@ -1359,6 +1389,12 @@ def _handle_download_post(handler, data):
                 except Exception:
                     pass
                 _ffmpeg_procs.pop(dl_id, None)
+            if dl_id in _direct_procs:
+                try:
+                    _direct_procs[dl_id].terminate()
+                except Exception:
+                    pass
+                _direct_procs.pop(dl_id, None)
             # 清理残留的部分文件
             if dl_id in _downloads:
                 partial_paths = []
@@ -1408,6 +1444,19 @@ def _handle_download_post(handler, data):
                     if _active_download == dl_id:
                         _active_download = None
                         need_process = True
+        # 直接杀进程
+        if dl_id in _ffmpeg_procs:
+            try:
+                _ffmpeg_procs[dl_id].terminate()
+            except Exception:
+                pass
+            _ffmpeg_procs.pop(dl_id, None)
+        if dl_id in _direct_procs:
+            try:
+                _direct_procs[dl_id].terminate()
+            except Exception:
+                pass
+            _direct_procs.pop(dl_id, None)
         if need_process:
             threading.Thread(target=_process_queue, daemon=True).start()
         handler.send_json({'ok': True})
