@@ -736,7 +736,7 @@ function showMemory(){
         // RAM环形图+详细数据
         var usedPct=m.percent;
         var cachePct=m.total_mb>0?Math.round((m.cached_mb||0)/m.total_mb*100):0;
-        var freePct=Math.round(100-Math.round(usedPct)-cachePct);
+        var freePct=Math.round(100-usedPct);
         if(freePct<0)freePct=0;
         var usedGB=(m.used_mb/1024).toFixed(2);
         var totalGB=(m.total_mb/1024).toFixed(2);

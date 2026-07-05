@@ -1,4 +1,6 @@
 *.bak*
+*.*.bak*
+*-bak-*
 *.log
 *_traffic.json
 *_history.json

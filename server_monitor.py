@@ -471,9 +471,9 @@ def get_status(features):
         total = meminfo.get('MemTotal', 0)
         avail = meminfo.get('MemAvailable', 0)
         cached = meminfo.get('Cached', 0) + meminfo.get('Buffers', 0)
-        actual_used = total - avail - cached
-        if actual_used < 0: actual_used = 0
-        status['memory'] = {'total_mb': round(total/1024), 'used_mb': round(actual_used/1024), 'avail_mb': round(avail/1024), 'cached_mb': round(cached/1024), 'percent': round(100*(total-avail)/max(total,1),1)}
+        used_fix = total - avail
+        if used_fix < 0: used_fix = 0
+        status['memory'] = {'total_mb': round(total/1024), 'used_mb': round(used_fix/1024), 'avail_mb': round(avail/1024), 'cached_mb': round(cached/1024), 'percent': round(100*(total-avail)/max(total,1),1)}
         st = meminfo.get('SwapTotal', 0)
         st = meminfo.get('SwapTotal', 0)
         sf = meminfo.get('SwapFree', 0)
@@ -588,7 +588,22 @@ def get_status(features):
         tn = run('curl -s http://localhost:51888/quicktunnel 2>/dev/null', timeout=3).strip()
         if tn and tn.startswith('{'):
             tinfo = json.loads(tn)
-            status['tunnel'] = {'url': 'https://'+tinfo['hostname'], 'active': True}
+            new_url = 'https://'+tinfo['hostname']
+            status['tunnel'] = {'url': new_url, 'active': True}
+            # 检测域名变动并推送微信通知
+            _tunnel_file = '/opt/monitor/last_tunnel_url'
+            try:
+                old_url = ''
+                if os.path.exists(_tunnel_file):
+                    with open(_tunnel_file) as tf:
+                        old_url = tf.read().strip()
+                if new_url != old_url and old_url:
+                    _pushplus('Cloudflare Tunnel 已更新',
+                               '<p>旧地址: ' + old_url + '</p><p>新地址: ' + new_url + '</p>')
+                with open(_tunnel_file, 'w') as tf:
+                    tf.write(new_url)
+            except Exception:
+                pass
         else:
             status['tunnel'] = {'url': None, 'active': False}
     except Exception:
@@ -630,7 +645,12 @@ def _pushplus(title, content):
         body = json.dumps({'token': PUSHPLUS_TOKEN, 'title': title, 'content': content, 'template': 'html'}).encode()
         req = urllib.request.Request('http://www.pushplus.plus/send', data=body, headers={'Content-Type':'application/json'})
         urllib.request.urlopen(req, timeout=10)
-    except Exception: pass
+    except Exception as e:
+        try:
+            with open('/opt/monitor/pushplus_error.log', 'a') as pf:
+                pf.write('[' + datetime.now().isoformat() + '] PushPlus fail: ' + str(e) + '\n')
+        except Exception:
+            pass
 
 # ============================================================
 # 文件管理 - 下载器
@@ -678,6 +698,36 @@ def _save_dl_history(history):
             json.dump(history, f, ensure_ascii=False)
     except Exception:
         pass
+
+def _validate_mp4(output_path):
+    if not output_path or not os.path.exists(output_path):
+        return False
+    if os.path.splitext(output_path)[1].lower() not in (".mp4", ".mkv", ".avi", ".mov", ".webm", ".m4v"):
+        return True
+    try:
+        r = subprocess.run(["ffprobe", "-v", "info", "-show_streams", output_path], capture_output=True, text=True, timeout=60)
+        stderr = r.stderr or ""
+        if "moov atom not found" in stderr or "Invalid data found" in stderr:
+            tmp = output_path + ".fixing.mp4"
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            r2 = subprocess.run(["ffmpeg", "-y", "-i", output_path, "-c", "copy", "-movflags", "+faststart", "-threads", "1", "-max_muxing_queue_size", "1024", tmp], capture_output=True, text=True, timeout=900)
+            if r2.returncode == 0 and os.path.exists(tmp) and os.path.getsize(tmp) > 0:
+                os.replace(tmp, output_path)
+                return True
+            else:
+                if os.path.exists(tmp):
+                    os.remove(tmp)
+                return False
+        if r.returncode != 0 and stderr.strip():
+            return False
+        if "codec_type=video" not in (r.stdout or ""):
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception:
+        return False
 
 def _add_to_history(dl):
     try:
@@ -1027,6 +1077,12 @@ def _download_direct(dl, url, output_path):
                     os.replace(tmp2, out2)
         except Exception:
             pass
+        # 验证视频可播放性
+        if not _validate_mp4(output_path):
+            with _download_lock:
+                if dl_id in _downloads:
+                    _downloads[dl_id]['status'] = 'failed'
+                    _downloads[dl_id]['error'] = '视频文件损坏'
         try:
             _pushplus('下载完成: ' + dl2.get('filename', ''), '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
         except Exception:
@@ -1194,11 +1250,19 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             dl2.pop('total_segments', None)
             dl2.pop('downloaded_segments', None)
             dl2.pop('_speed_sample', None)  # clean up speed tracking
+            # 验证视频可播放性
+            if not _validate_mp4(output_path):
+                dl2['status'] = 'failed'
+                dl2['error'] = '视频文件损坏(moov丢失)'
             _add_to_history(dl2)
     
     try:
-        _pushplus('下载完成: ' + dl2.get('filename', ''),
-                   '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
+        if dl2.get('status') == 'failed':
+            _pushplus('下载失败: ' + dl2.get('filename', ''),
+                       '<p>文件: ' + dl2.get('filename', '') + '</p><p>错误: ' + dl2.get('error', '未知') + '</p>')
+        else:
+            _pushplus('下载完成: ' + dl2.get('filename', ''),
+                       '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
     except Exception:
         pass
 
