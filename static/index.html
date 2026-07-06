@@ -428,7 +428,7 @@ body.dark textarea{background:#1c1e24;color:#e4e4e7;border-color:#2a2d35}
 <div class="tut-sec"><div class="tut-h on" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">系统信息</div><div class="tut-b on" style="padding:12px">
 <div id="sys-info" style="font-size:13px;line-height:2;color:#374151">加载中...</div>
 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-<button onclick="quickAction('reboot')" style="flex:1;min-width:80px;padding:10px;background:#fef2f2;color:#dc2626;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">重启</button>
+<button onclick="quickAction('shutdown')" style="flex:1;min-width:80px;padding:10px;background:#fef2f2;color:#dc2626;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">关机</button>
 <button onclick="quickAction('cleanup')" style="flex:1;min-width:80px;padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">清理缓存</button>
 <button onclick="quickAction('logs')" style="flex:1;min-width:80px;padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">清理日志</button>
 </div>
@@ -719,10 +719,10 @@ async function doCoolDown(){
     // 全屏遮罩+旋转动画
     var overlay=document.createElement('div');
     overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
-    overlay.innerHTML='<div style="width:36px;height:36px;border:3px solid #374151;border-top:3px solid #dc2626;border-radius:50%;animation:spin .8s linear infinite"></div><div style="color:#e5e7eb;font-size:14px;margin-top:14px">正在重启服务器</div>';
+    overlay.innerHTML='<div style="width:36px;height:36px;border:3px solid #374151;border-top:3px solid #dc2626;border-radius:50%;animation:spin .8s linear infinite"></div><div style="color:#e5e7eb;font-size:14px;margin-top:14px">正在关机服务器</div>';
     document.body.appendChild(overlay);
     try{
-        await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reboot'})});
+        await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'shutdown'})});
     }catch(e){}
     // 30秒后刷新
     setTimeout(function(){location.reload();},30000);
@@ -770,7 +770,7 @@ function showMemory(){
         var sFreeGB=((s.total_mb-s.used_mb)/1024).toFixed(1);
         h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
         h+='<div style="font-size:13px;font-weight:600;color:#1f2937">交换空间</div>';
-        h+='<div style="font-size:11px;color:#6b7280">'+sUsedGB+' / '+sTotalGB+' GB</div>';
+        h+='<div style="font-size:11px;color:#6b7280">'+sUsedMB+' / '+sTotalMB+' MB</div>';
         h+='</div>';
         // Per-device cards
         if(s.devices&&s.devices.length>0){
@@ -796,7 +796,7 @@ function showMemory(){
                 h+='</div>';
                 h+='<div style="background:#e2e8f0;border-radius:4px;height:5px;overflow:hidden"><div style="width:'+Math.min(dvPct,100)+'%;background:'+dvBarCol+';transition:width .3s;height:100%"></div></div>';
                 h+='<div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;color:#6b7280">';
-                h+='<span>'+dvUsedGB+' GB / '+dvSizeGB+' GB</span>';
+                h+='<span>'+dvUsedMB+' MB / '+dvSizeMB+' MB</span>';
                 h+='<span>'+(dv.type==='ZRAM'?'内存':'SD卡')+'</span>';
                 h+='</div>';
                 h+='</div>';
@@ -2341,13 +2341,22 @@ async function loadSysInfo(keepMsg){
 }
 async function quickAction(action){
     var msg=document.getElementById('sys-action-msg');
-    if(action==='reboot'){if(!confirm('确定重启服务器？'))return;}
+    if(action==='shutdown'){if(!confirm('确定关机服务器？'))return;}
     msg.textContent='执行中...';msg.style.color='#9ca3af';
     try{
         var r=await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})});
         var d=await r.json();
         window._lastActionResult={message:d.message||'完成',color:d.success?'#34d399':'#f87171'};
-        if(d.success)await loadSysInfo(true);
+        if(d.success){
+            if(action==='shutdown'){
+                var ov=document.createElement('div');
+                ov.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
+                ov.innerHTML='<div style="width:36px;height:36px;border:3px solid #374151;border-top:3px solid #dc2626;border-radius:50%;animation:spin .8s linear infinite"></div><div style="color:#e5e7eb;font-size:14px;margin-top:14px">正在关机服务器</div>';
+                document.body.appendChild(ov);
+                return;
+            }
+            await loadSysInfo(true);
+        }
         else{msg.textContent=d.message||'失败';msg.style.color='#f87171';}
     }catch(e){msg.textContent='执行失败';msg.style.color='#f87171';}
 }
