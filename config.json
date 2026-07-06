@@ -21,7 +21,6 @@
     "smb",
     "tailscale",
     "weather",
-    "starlink",
     "cron",
     "monitor"
   ]

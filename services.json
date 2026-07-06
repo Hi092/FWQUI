@@ -40,14 +40,6 @@
     "check_cmd": "test $(systemctl is-active weather-monitor.timer) = active"
   },
   {
-    "id": "starlink",
-    "name": "Starlink",
-    "port": null,
-    "start_cmd": "systemctl start starlink-sub.service",
-    "stop_cmd": "systemctl stop starlink-sub.service",
-    "check_cmd": "test \"$(systemctl is-active starlink-sub.service)\" = \"active\""
-  },
-  {
     "id": "monitor",
     "name": "监控面板",
     "port": 9090,

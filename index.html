@@ -428,7 +428,7 @@ body.dark textarea{background:#1c1e24;color:#e4e4e7;border-color:#2a2d35}
 <div class="tut-sec"><div class="tut-h on" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">系统信息</div><div class="tut-b on" style="padding:12px">
 <div id="sys-info" style="font-size:13px;line-height:2;color:#374151">加载中...</div>
 <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-<button onclick="quickAction('reboot')" style="flex:1;min-width:80px;padding:10px;background:#fef2f2;color:#dc2626;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">重启</button>
+<button onclick="quickAction('shutdown')" style="flex:1;min-width:80px;padding:10px;background:#fef2f2;color:#dc2626;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">关机</button>
 <button onclick="quickAction('cleanup')" style="flex:1;min-width:80px;padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">清理缓存</button>
 <button onclick="quickAction('logs')" style="flex:1;min-width:80px;padding:10px;background:#f3f4f6;color:#374151;border:none;border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">清理日志</button>
 </div>
@@ -451,16 +451,16 @@ body.dark textarea{background:#1c1e24;color:#e4e4e7;border-color:#2a2d35}
 .dl-source-size{font-size:11px;color:#9ca3af;flex-shrink:0}
 .dl-source-type{font-size:10px;padding:2px 6px;border-radius:4px;background:#e5e7eb;color:#6b7280;flex-shrink:0;margin-left:6px}
 </style></style>
-<div class="tut-sec"><div class="tut-h on" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">主页圆圈</div><div class="tut-b on"><b>CPU</b>：显示CPU使用率百分比，外圈是温度。点击打开CPU详情弹窗，里面有实时折线图显示CPU波动，底部有「强制降温」按钮（点击后需要输入"确认"才会重启服务器）。<br><br><b>内存</b>：显示RAM使用率。点击打开内存详情弹窗，四宫格卡片显示总内存、可用、已用、缓存，下方有虚拟内存（ZRAM+磁盘Swap）信息。<br><br><b>磁盘</b>：彩色弧长代表磁盘使用率，不同颜色代表不同分区。点击打开磁盘详情，可以长按拖拽调整显示顺序。<br><br><b>网络</b>：显示实时网速（Mbps），不到1M显示K。点击打开网络弹窗，里面有测速按钮和历史测速记录。点击测速时网络圈会紫色脉冲闪烁。</div></div>
+<div class="tut-sec"><div class="tut-h on" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">主页圆圈</div><div class="tut-b on"><b>CPU</b>：显示CPU使用率百分比，外圈是温度。点击打开CPU详情弹窗，里面有实时折线图显示CPU波动，底部有「强制降温」按钮（点击后需要输入"确认"才会关机）。<br><br><b>内存</b>：显示RAM使用率。点击打开内存详情弹窗，四宫格卡片显示总内存、可用、已用、缓存，下方有虚拟内存（ZRAM+磁盘Swap）信息。<br><br><b>磁盘</b>：彩色弧长代表磁盘使用率，不同颜色代表不同分区。点击打开磁盘详情，可以长按拖拽调整显示顺序。<br><br><b>网络</b>：显示实时网速（Mbps），不到1M显示K。点击打开网络弹窗，里面有测速按钮和历史测速记录。点击测速时网络圈会紫色脉冲闪烁。</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">服务管理</div><div class="tut-b">• 服务列表显示所有监控的服务状态，绿色圆点=运行中（带呼吸灯），红色=已停止<br>• 每个服务右侧有「启动/停止」按钮，点击即可操作<br>• 长按服务卡片（或桌面端右键）弹出快捷菜单：<br>&nbsp;&nbsp;— 启动 / 停止 / 重启<br>&nbsp;&nbsp;— 访问（跳转到该服务网页）<br>&nbsp;&nbsp;— <b>改名</b>：自定义服务显示名称，改完立即生效<br>&nbsp;&nbsp;— <b>恢复默认名</b>：一键恢复原始名称<br>• 远程类型的服务显示「控制」按钮，点击打开远程控制面板<br>• 点击服务名称可以直接访问该服务的网页（如FileBrowser、销售日报）<br>• 服务前面的绿色圆点有呼吸灯效果，全部服务正常运行时绿灯呼吸闪烁</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">顶部工具栏</div><div class="tut-b">• 第一个图标：打开终端（支持AI对话和命令执行两种模式）<br>• 第二个图标：查看系统日志<br>• 第三个图标：打开设置面板<br>• 第四个图标：退出登录</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">远程控制</div><div class="tut-b">服务列表中标记为「远程」类型的服务（如公司电脑），点击「控制」按钮打开远程控制面板：<br><br><b>状态栏：</b><br>• 显示目标设备的在线状态和IP地址<br><br><b>快捷操作：</b><br>• 音量：静音、30%、50%、100% 一键切换<br>• 锁屏、关机、重启、睡眠 — 远程控制系统<br>• 截屏 — 获取目标设备屏幕截图<br><br><b>AI远程终端：</b><br>• 支持两种模式：AI对话和命令执行<br>• 命令直接在目标设备上执行<br>• 执行结果实时显示在聊天窗口</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 显示</div><div class="tut-b">控制主页显示哪些圆圈模块：<br>• CPU、内存、磁盘、网络、服务、温度、运行时间 — 各自独立开关<br>• 刷新频率：1-5秒可选，控制页面数据自动刷新间隔，默认3秒<br>• 关闭某个开关后，对应圆圈会立即从主页消失</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 服务</div><div class="tut-b">调整服务列表的显示顺序：<br>• 点击↑↓按钮调整上下位置<br>• 点击「隐藏」可以隐藏不想看到的服务<br>• 设置会同步保存到服务器</div></div>
-<div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 日志</div><div class="tut-b">控制日志页面显示哪些内容，分三组：<br><br><b>面板访问日志：</b><br>• 登录/登出 — 登录成功和密码错误记录<br>• 服务操作 — 启动/停止服务记录<br>• 定时任务操作 — 添加/编辑/删除定时任务<br>• 设置修改 — 修改密码、切换开关、服务排序等<br>• AI对话 — 使用AI助手对话记录（默认关闭）<br>• 终端命令 — 执行shell命令记录（默认关闭）<br>• 测速记录 — 网速测试记录<br>• 系统操作 — 重启、清理缓存、清理日志、修改主机名<br>• API调用 — 底层API调用记录（默认关闭）<br><br><b>外部服务日志：</b><br>• 销售日报访问 — 有人访问销售日报的记录<br>• FileBrowser操作 — 文件上传/下载/登录记录<br>• SMB文件访问 — Samba共享访问记录（默认关闭）<br><br><b>显示设置：</b><br>• 显示时间戳 — 日志前面的时间（默认开启）<br>• 显示IP地址 — 显示访问者IP（默认开启）<br>• 自动刷新 — 日志页面自动刷新（默认关闭）</div></div>
+<div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 日志</div><div class="tut-b">控制日志页面显示哪些内容，分三组：<br><br><b>面板访问日志：</b><br>• 登录/登出 — 登录成功和密码错误记录<br>• 服务操作 — 启动/停止服务记录<br>• 定时任务操作 — 添加/编辑/删除定时任务<br>• 设置修改 — 修改密码、切换开关、服务排序等<br>• AI对话 — 使用AI助手对话记录（默认关闭）<br>• 终端命令 — 执行shell命令记录（默认关闭）<br>• 测速记录 — 网速测试记录<br>• 系统操作 — 关机、清理缓存、清理日志、修改主机名<br>• API调用 — 底层API调用记录（默认关闭）<br><br><b>外部服务日志：</b><br>• 销售日报访问 — 有人访问销售日报的记录<br>• FileBrowser操作 — 文件上传/下载/登录记录<br>• SMB文件访问 — Samba共享访问记录（默认关闭）<br><br><b>显示设置：</b><br>• 显示时间戳 — 日志前面的时间（默认开启）<br>• 显示IP地址 — 显示访问者IP（默认开启）<br>• 自动刷新 — 日志页面自动刷新（默认关闭）</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 密码</div><div class="tut-b">修改面板登录密码：<br>• 输入当前密码 → 新密码 → 确认新密码 → 点击「确认修改」<br>• 密码至少4位<br>• 修改后需要重新登录<br>• 连续5次密码错误会锁定5分钟（防暴力破解）</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → AI服务</div><div class="tut-b">管理AI对话服务商：<br><br><b>已有服务商：</b><br>• 每个服务商显示名称和当前使用的模型<br>• 点击卡片选中为当前使用的服务商<br>• 点击「编辑」修改API地址、Key、模型<br>• 点击「删除」移除不用的服务商<br><br><b>添加新服务商：</b><br>• 点击「+ 添加新服务商」按钮<br>• 快速选择：提供16个预设服务商（智谱AI、OpenAI、DeepSeek、通义千问、Moonshot、百川、阶跃星辰、零一万物、讯飞星火、MiniMax、百度千帆、Groq、Together、Mistral等）<br>• 点击预设自动填充名称和API地址<br>• 输入API Key后点击「获取模型列表」自动获取可用模型<br>• 选择模型后点击「保存」<br>• API地址支持智能补全：输入域名自动补全为完整地址</div></div>
-<div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 系统</div><div class="tut-b"><b>系统信息：</b><br>• 主机名 — 可直接编辑，输入新名称点「保存」<br>• 系统 — 显示操作系统版本<br>• 内核 — Linux内核版本<br>• 架构 — CPU架构（ARM 32位/64位等）<br>• IP地址 — 服务器局域网IP<br><br><b>快捷操作：</b><br>• 重启 — 确认后重启服务器，30秒后自动刷新页面<br>• 清理缓存 — 清理临时文件、pip缓存、apt缓存，显示释放了多少空间<br>• 清理日志 — 清理journald系统日志和面板访问日志，显示释放空间<br>• 清空日志 — 仅清空面板操作日志（不清系统日志）</div></div>
+<div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">设置 → 系统</div><div class="tut-b"><b>系统信息：</b><br>• 主机名 — 可直接编辑，输入新名称点「保存」<br>• 系统 — 显示操作系统版本<br>• 内核 — Linux内核版本<br>• 架构 — CPU架构（ARM 32位/64位等）<br>• IP地址 — 服务器局域网IP<br><br><b>快捷操作：</b><br>• 关机 — 安全关闭所有服务后断电，重新插电即可开机<br>• 清理缓存 — 清理临时文件、pip缓存、apt缓存，显示释放了多少空间<br>• 清理日志 — 清理journald系统日志和面板访问日志，显示释放空间<br>• 清空日志 — 仅清空面板操作日志（不清系统日志）</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">终端（AI助手）</div><div class="tut-b">支持两种模式，顶部切换：<br><br><b>AI模式：</b><br>• 跟AI对话，AI可以帮你操作服务器<br>• AI回复的代码块可以直接点击「运行」按钮执行<br>• 对话记录自动保存，下次打开还在<br>• 点击「清空对话」重置<br><br><b>命令模式：</b><br>• 直接输入shell命令执行<br>• 命令在后台运行，支持长时间任务<br>• 点击「查看结果」查看输出</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">系统日志</div><div class="tut-b">点击顶部第二个图标打开日志页面：<br>• 显示面板操作日志、销售日报访问、文件操作等<br>• 错误日志红色、警告黄色、成功绿色<br>• 日志内容可在「设置→日志」中精细控制<br>• 时间戳和IP地址可单独开关</div></div>
 <div class="tut-sec"><div class="tut-h" onclick="this.classList.toggle('on');this.nextElementSibling.classList.toggle('on')">网站监控</div><div class="tut-b">• 监控指定URL的可用性和响应时间<br>• 通过API接口添加/编辑/删除监控项<br>• 每个监控项显示：在线/离线状态、响应时间（ms）、SSL证书到期天数<br>• 配置存储在 /opt/monitor/monitors.json</div></div>
@@ -719,10 +719,10 @@ async function doCoolDown(){
     // 全屏遮罩+旋转动画
     var overlay=document.createElement('div');
     overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center';
-    overlay.innerHTML='<div style="width:36px;height:36px;border:3px solid #374151;border-top:3px solid #dc2626;border-radius:50%;animation:spin .8s linear infinite"></div><div style="color:#e5e7eb;font-size:14px;margin-top:14px">正在重启服务器</div>';
+    overlay.innerHTML='<div style="width:36px;height:36px;border:3px solid #374151;border-top:3px solid #dc2626;border-radius:50%;animation:spin .8s linear infinite"></div><div style="color:#e5e7eb;font-size:14px;margin-top:14px">正在关机...</div>';
     document.body.appendChild(overlay);
     try{
-        await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'reboot'})});
+        await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'shutdown'})});
     }catch(e){}
     // 30秒后刷新
     setTimeout(function(){location.reload();},30000);
@@ -736,7 +736,7 @@ function showMemory(){
         // RAM环形图+详细数据
         var usedPct=m.percent;
         var cachePct=m.total_mb>0?Math.round((m.cached_mb||0)/m.total_mb*100):0;
-        var freePct=Math.round(100-usedPct);
+        var freePct=Math.round(100-Math.round(usedPct)-cachePct);
         if(freePct<0)freePct=0;
         var usedGB=(m.used_mb/1024).toFixed(2);
         var totalGB=(m.total_mb/1024).toFixed(2);
@@ -945,7 +945,7 @@ function showNet(){
     h+='<div style="margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px">';
     h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
     h+='<div style="font-size:13px;font-weight:600;color:#1f2937">流量记录</div>';
-    h+='<input type="date" id="net-history-date" style="border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;font-size:12px;color:#374151;background:#fff" onchange="loadNetHistory(true)">';
+    h+='<input type="date" id="net-history-date" style="border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;font-size:12px;color:#374151;background:#fff" onchange="loadNetHistory()">';
     h+='</div>';
     h+='<div id="net-history-content" style="min-height:60px">';
     h+='<div style="text-align:center;color:#9ca3af;font-size:12px;padding:16px">加载中...</div>';
@@ -1264,7 +1264,8 @@ async function renderDownloads(){
         // 操作按钮
         h+='<div style="display:flex;gap:8px;margin-bottom:14px">';
         h+='<button class="dl-btn dl-btn-purple" onclick="startDownloads()" style="flex:1">开始下载</button>';
-        h+='<button class="dl-btn dl-btn-gray" onclick="clearHistory()" style="flex-shrink:0">清历史</button>';
+        h+='<button class="dl-btn dl-btn-gray" onclick="clearCompletedTasks()" style="flex-shrink:0">清理任务</button>';
+h+='<button class="dl-btn dl-btn-gray" onclick="clearHistory()" style="flex-shrink:0">清历史</button>';
         h+='</div>';
         // 统一下载列表（按状态排序：下载中→排队→暂停→已完成→失败→取消）
         var seenIds={};
@@ -1390,13 +1391,9 @@ function renderDlItem(dl){
     if(name.length>40)name=name.substring(0,37)+'...';
     // 优先级：速度+ETA > 进度信息 > 状态
     var meta='';
-    var detail=dl.status_detail||'';  // 细粒度状态（如"正在优化文件..."）
     if(dl.status==='downloading'){
-        if(detail&&detail!=='ffmpeg下载中...'){
-            meta=detail+' · '+(dl.progress||0).toFixed(1)+'%';
-        }else{
-            var speed=dl.speed_mbps||0;
-            var eta=dl.eta_sec||0;
+        var speed=dl.speed_mbps||0;
+        var eta=dl.eta_sec||0;
         // 文件大小
         var sizeStr='';
         if(dl.total_bytes&&dl.total_bytes>0){
@@ -1414,7 +1411,6 @@ function renderDlItem(dl){
         }else{
             meta='下载中...'+(sizeStr?' · '+sizeStr:'');
         }
-        }  // end of speed/eta else
     }else if(dl.is_m3u8&&dl.progress>0&&dl.status!=='completed'&&dl.status!=='failed'){
         // 非活跃下载时显示进度估计
         var ds=dl.downloaded_segments||0, ts=dl.total_segments||0;
@@ -1447,8 +1443,9 @@ function renderDlItem(dl){
     }else if(dl.status==='queued'){
         h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')">取消</button>';
     }else if(dl.status==='completed'){
+        h+='<button class="dl-btn dl-btn-purple dl-btn-sm" onclick="openFilePreview(\''+(dl.folder||'/data/share/视频')+'\',\''+(dl.filename||'')+'\')" title="在线播放">播放</button>';
+        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="openCompletedFolder(\''+encodeURIComponent(dl.folder||'/data/share/视频')+'\')" title="打开文件夹">打开</button>';
         h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
-        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="removeDownload(\''+dl.id+'\')" style="margin-left:3px">x</button>';
         var folderShow=dl.folder||'';
         if(folderShow.length>30)folderShow='...'+folderShow.slice(-27);
         h+='<div style="font-size:10px;color:#9ca3af;word-break:break-all;flex-basis:100%;margin-top:2px">'+folderShow+'/'+dl.filename+'</div>';
@@ -1627,8 +1624,14 @@ async function removeDownload(id){
     }catch(e){}
 }
 
+async function clearCompletedTasks(){
+    try{
+        await fetch('/api/downloads/clear-completed',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+        await renderDownloads();
+    }catch(e){}
+}
+
 async function clearHistory(){
-    if(!confirm('确定清空所有下载历史记录？'))return;
     try{
         await fetch('/api/download/history/clear',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
         await renderDownloads();
@@ -1752,13 +1755,11 @@ function openFilePreview(folder,filename){
     var token=window._fbToken||'';
     if(!fbUrl){alert('网盘地址未获取，稍后重试');return;}
     if(!filename){alert('文件名为空');return;}
-    // 构造 FileBrowser 相对路径（去重 /data/share/ 前缀）
+    // 构造 FileBrowser 相对路径
     var cleanFolder=(folder||'/data/share/').replace(/^\/data\/share\/?/,'');
-    // 避免双斜杠
-    if(cleanFolder&&cleanFolder.endsWith('/'))cleanFolder=cleanFolder.slice(0,-1);
-    var relPath=cleanFolder?'/'+cleanFolder+'/'+filename:'/'+filename;
-    // raw 模式：需要 auth 但直接返回原始文件，适合视频播放
-    var url=fbUrl.replace(/\/$/,'')+'/api/raw'+relPath;
+    var relPath=cleanFolder?(cleanFolder+'/'+filename):filename;
+    // FileBrowser raw 模式直接返回文件内容，更适合视频播放
+    var url=fbUrl.replace(/\/$/,'')+'/api/public/dl/'+encodeURIComponent(relPath);
     if(token)url+='?auth='+token;
     // 在新标签页直接播放
     window.open(url,'_blank');
@@ -2341,7 +2342,7 @@ async function loadSysInfo(keepMsg){
 }
 async function quickAction(action){
     var msg=document.getElementById('sys-action-msg');
-    if(action==='reboot'){if(!confirm('确定重启服务器？'))return;}
+    if(action==='shutdown'){if(!confirm('确定关机？'))return;}
     msg.textContent='执行中...';msg.style.color='#9ca3af';
     try{
         var r=await fetch('/api/sys-action',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:action})});
@@ -2802,19 +2803,13 @@ async function renderNotifications(){
                 var name=dl.filename||dl.url.split('/').pop()||'?';
                 if(name.length>30)name=name.substring(0,27)+'...';
                 var st={'downloading':'下载中','queued':'排队中','paused':'已暂停'}[dl.status]||dl.status;
-                var detail2=dl.status_detail||'';
                 var prog=dl.progress||0;
                 var pf=dl.status==='paused'?' paused':'';
-                var meta;
-                if(detail2&&detail2!=='ffmpeg下载中...'){
-                    meta=detail2+' · '+prog.toFixed(1)+'%';
-                }else{
-                    meta=st+' · '+prog.toFixed(1)+'%';
-                    if(dl.status==='downloading'&&dl.speed_mbps>0){
-                        var spd=dl.speed_mbps; var eta=dl.eta_sec||0;
-                        meta=spd+' MB/s · '+prog.toFixed(1)+'%';
-                        if(eta>0){var em=Math.floor(eta/60),es=Math.floor(eta%60);meta+=' · 剩'+(em>0?em+'分':'')+es+'秒';}
-                    }
+                var meta=st+' · '+prog.toFixed(1)+'%';
+                if(dl.status==='downloading'&&dl.speed_mbps>0){
+                    var spd=dl.speed_mbps; var eta=dl.eta_sec||0;
+                    meta=spd+' MB/s · '+prog.toFixed(1)+'%';
+                    if(eta>0){var em=Math.floor(eta/60),es=Math.floor(eta%60);meta+=' · 剩'+(em>0?em+'分':'')+es+'秒';}
                 }
                 dlBlock+='<div class="np-dl-item">';
                 dlBlock+='<div class="np-dl-name">'+name+'</div>';
@@ -2861,19 +2856,13 @@ async function refreshNpDownloads(){
             var name=dl.filename||dl.url.split('/').pop()||'?';
             if(name.length>30)name=name.substring(0,27)+'...';
             var st={'downloading':'下载中','queued':'排队中','paused':'已暂停'}[dl.status]||dl.status;
-            var detail3=dl.status_detail||'';
             var prog=dl.progress||0;
             var pf=dl.status==='paused'?' paused':'';
-            var meta;
-            if(detail3&&detail3!=='ffmpeg下载中...'){
-                meta=detail3+' · '+prog.toFixed(1)+'%';
-            }else{
-                meta=st+' · '+prog.toFixed(1)+'%';
-                if(dl.status==='downloading'&&dl.speed_mbps>0){
-                    var spd=dl.speed_mbps; var eta=dl.eta_sec||0;
-                    meta=spd+' MB/s · '+prog.toFixed(1)+'%';
-                    if(eta>0){var em=Math.floor(eta/60),es=Math.floor(eta%60);meta+=' · 剩'+(em>0?em+'分':'')+es+'秒';}
-                }
+            var meta=st+' · '+prog.toFixed(1)+'%';
+            if(dl.status==='downloading'&&dl.speed_mbps>0){
+                var spd=dl.speed_mbps; var eta=dl.eta_sec||0;
+                meta=spd+' MB/s · '+prog.toFixed(1)+'%';
+                if(eta>0){var em=Math.floor(eta/60),es=Math.floor(eta%60);meta+=' · 剩'+(em>0?em+'分':'')+es+'秒';}
             }
             h+='<div class="np-dl-item"><div class="np-dl-name">'+name+'</div><div class="np-dl-meta">'+meta+'</div><div class="np-dl-bar"><div class="np-dl-fill'+pf+'" style="width:'+prog+'%"></div></div></div>';
         });
