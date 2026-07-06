@@ -663,6 +663,7 @@ def _pushplus(title, content):
 # ============================================================
 
 _DOWNLOAD_HISTORY_FILE = '/opt/monitor/download_history.json'
+_DL_TASKS_FILE = '/opt/monitor/dl_tasks.json'
 _downloads = {}
 _download_lock = threading.Lock()
 _download_queue = []
@@ -727,6 +728,37 @@ def _save_dl_history(history):
         history = history[-200:]
         with open(_DOWNLOAD_HISTORY_FILE, 'w') as f:
             json.dump(history, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+def _save_dl_tasks():
+    """持久化下载任务"""
+    try:
+        with _download_lock:
+            tasks = {}
+            for dl_id, dl in _downloads.items():
+                t = {k: v for k, v in dl.items() if not k.startswith('_')}
+                tasks[dl_id] = t
+        with open(_DL_TASKS_FILE, 'w') as f:
+            json.dump(tasks, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+def _load_dl_tasks():
+    """启动时恢复下载任务"""
+    if not os.path.exists(_DL_TASKS_FILE):
+        return
+    try:
+        with open(_DL_TASKS_FILE, 'r') as f:
+            tasks = json.load(f)
+        for dl_id, dl in tasks.items():
+            status = dl.get('status', '')
+            if status in ('completed', 'failed', 'cancelled'):
+                continue
+            if status == 'downloading':
+                dl['status'] = 'interrupted'
+                dl['error'] = '服务重启，下载中断'
+            _downloads[dl_id] = dl
     except Exception:
         pass
 
@@ -968,6 +1000,7 @@ def _run_download(dl_id):
                 if cur_status == 'cancelling':
                     dl2['status'] = 'cancelled'
                     dl2['completed_at'] = datetime.now().isoformat()
+                    _save_dl_tasks()
                 elif cur_status != 'paused':
                     dl2['status'] = 'failed'
                     dl2['error'] = str(e)
@@ -1114,6 +1147,7 @@ def _download_direct(dl, url, output_path):
                 dl2['downloaded_bytes'] = size
                 dl2['size_mb'] = round(size / 1048576, 1)
                 dl2['completed_at'] = datetime.now().isoformat()
+        _save_dl_tasks()
         _add_to_history(dl2)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -1415,6 +1449,7 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             dl2['downloaded_bytes'] = size
             dl2['size_mb'] = round(size / 1048576, 1)
             dl2['completed_at'] = datetime.now().isoformat()
+            _save_dl_tasks()
             dl2.pop('status_detail', None)
             dl2.pop('total_segments', None)
             dl2.pop('downloaded_segments', None)
@@ -1467,6 +1502,7 @@ def _start_download(url, folder='/data/share/视频', filename='', referer=''):
     with _download_lock:
         _downloads[dl_id] = dl
         _download_queue.append(dl_id)
+    _save_dl_tasks()
     threading.Thread(target=_process_queue, daemon=True).start()
     return dl_id
 
@@ -3151,6 +3187,7 @@ server = ThreadedHTTPServer(('0.0.0.0', PORT), Handler)
 server.timeout = 30
 
 # 启动网络流量历史记录器
+_load_dl_tasks()
 _start_net_history_recorder()
 _start_service_traffic_collector()
 # 立即记录一次当前流量
