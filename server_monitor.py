@@ -110,8 +110,10 @@ def _load_net_history():
 def _save_net_history(data):
     """保存网络流量历史"""
     try:
-        with open(_NET_HISTORY_FILE, 'w') as f:
+        tmp = _NET_HISTORY_FILE + '.tmp'
+        with open(tmp, 'w') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _NET_HISTORY_FILE)
     except Exception:
         pass
 
@@ -619,7 +621,7 @@ def get_status(features):
     try:
         _now = time.time()
         if not hasattr(get_status, '_fbtoken') or _now - get_status._fbts > 5400:
-            resp = run("curl -sk -X POST https://localhost:8088/api/login "
+            resp = run("curl -s -X POST http://localhost:8088/api/login "
                        "-H 'Content-Type: application/json' "
                        "-d '{\"username\":\"al2560335@gmail.com\",\"password\":\"lixueyi1998.\"}' 2>/dev/null",
                        timeout=5).strip()
@@ -694,7 +696,8 @@ def _kill_ffmpeg(dl_id):
             proc.kill()
         except Exception:
             pass
-    _ffmpeg_procs.pop(dl_id, None)
+    finally:
+        _ffmpeg_procs.pop(dl_id, None)
 _dl_traffic_bytes = 0  # 下载累计流量
 _DL_TRAFFIC_PERSIST = '/opt/monitor/dl_traffic.json'
 
@@ -726,8 +729,10 @@ def _load_dl_history():
 def _save_dl_history(history):
     try:
         history = history[-200:]
-        with open(_DOWNLOAD_HISTORY_FILE, 'w') as f:
+        tmp = _DOWNLOAD_HISTORY_FILE + '.tmp'
+        with open(tmp, 'w') as f:
             json.dump(history, f, ensure_ascii=False)
+        os.replace(tmp, _DOWNLOAD_HISTORY_FILE)
     except Exception:
         pass
 
@@ -739,8 +744,10 @@ def _save_dl_tasks():
             for dl_id, dl in _downloads.items():
                 t = {k: v for k, v in dl.items() if not k.startswith('_')}
                 tasks[dl_id] = t
-        with open(_DL_TASKS_FILE, 'w') as f:
+        tmp = _DL_TASKS_FILE + '.tmp'
+        with open(tmp, 'w') as f:
             json.dump(tasks, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, _DL_TASKS_FILE)
     except Exception:
         pass
 
@@ -757,6 +764,8 @@ def _load_dl_tasks():
                 continue
             if status in ('downloading', 'paused'):
                 dl['status'] = 'interrupted'
+                dl['progress'] = 0
+                dl['downloaded_bytes'] = 0
                 dl['error'] = '服务重启，下载中断' if status == 'downloading' else '服务重启，暂停任务已中断'
             _downloads[dl_id] = dl
     except Exception:
@@ -803,10 +812,6 @@ def _add_to_history(dl):
             'size_mb': round(dl.get('downloaded_bytes', 0) / 1048576, 1),
             'status': dl.get('status', 'completed'),
             'completed_at': dl.get('completed_at', datetime.now().isoformat()),
-            'error': dl.get('error', ''),
-            'error': dl.get('error', ''),
-            'error': dl.get('error', ''),
-            'error': dl.get('error', ''),
             'error': dl.get('error', ''),
         })
         _save_dl_history(history)
@@ -1249,7 +1254,6 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
     last_status_check = time.time()
     last_size_check = time.time()
     _last_m3u8_size = 0  # 用于流量增量计算
-    _last_m3u8_size = 0
     last_pct = 0
     last_pct_change_time = time.time()
     for line in proc.stdout:
@@ -2309,7 +2313,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(200); self.send_header('Content-Type','application/json; charset=utf-8'); self.end_headers()
             self.wfile.write(json.dumps({'success': connected, 'dhcp': dhcp_ok, 'message': f'{"已连接" if connected else "连接失败"}到 {ssid}'}, ensure_ascii=False).encode()); return
         if path == '/api/network/disconnect':
-            token = self._get_token(data=data)
+            token = self._get_token(params=params)
             if not verify_session(token):
                 self.send_json({'error':'unauthorized'}, 401); return
             iface = data.get('iface', 'wlx0087361f7b1a')
