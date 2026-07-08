@@ -1685,13 +1685,17 @@ def _handle_download_post(handler, data):
             if dl_id in _downloads and _downloads[dl_id]['status'] == 'paused':
                 dl = _downloads[dl_id]
                 dl['status'] = 'queued'
-                # m3u8 不支持断点续传，标记 _resumed 让 _run_download 知道是续传
-                dl['_resumed'] = True
-                dl['status_detail'] = 'm3u8 重新下载中...'
-                dl['progress'] = 0
-                dl['downloaded_bytes'] = 0
                 dl.pop('_speed_sample', None)
-                # m3u8: ffmpeg -y 会自动覆盖不完整文件
+                is_m3u8 = dl.get('is_m3u8') or dl.get('url', '').endswith('.m3u8')
+                if is_m3u8:
+                    # m3u8 不支持断点续传，ffmpeg -y 会覆盖，必须重置
+                    dl['_resumed'] = True
+                    dl['status_detail'] = 'm3u8 重新下载中...'
+                    dl['progress'] = 0
+                    dl['downloaded_bytes'] = 0
+                else:
+                    # 直接下载支持 curl -C - 断点续传，不重置进度
+                    dl['status_detail'] = '续传中...'
                 _download_queue.insert(0, dl_id)
                 threading.Thread(target=_process_queue, daemon=True).start()
         _save_dl_tasks()
