@@ -755,9 +755,9 @@ def _load_dl_tasks():
             status = dl.get('status', '')
             if status in ('completed', 'failed', 'cancelled'):
                 continue
-            if status == 'downloading':
+            if status in ('downloading', 'paused'):
                 dl['status'] = 'interrupted'
-                dl['error'] = '服务重启，下载中断'
+                dl['error'] = '服务重启，下载中断' if status == 'downloading' else '服务重启，暂停任务已中断'
             _downloads[dl_id] = dl
     except Exception:
         pass
@@ -1631,6 +1631,7 @@ def _handle_download_post(handler, data):
                     _download_queue.remove(did)
                 if _active_download == did:
                     _active_download = None
+        _save_dl_tasks()
         handler.send_json({'ok': True, 'removed': len(to_remove)})
         return True
     elif path == '/api/download/history/clear':
@@ -1671,6 +1672,7 @@ def _handle_download_post(handler, data):
             _direct_procs.pop(dl_id, None)
         if need_process:
             threading.Thread(target=_process_queue, daemon=True).start()
+        _save_dl_tasks()
         handler.send_json({'ok': True})
         return True
     elif path == '/api/download/resume':
@@ -1688,6 +1690,7 @@ def _handle_download_post(handler, data):
                 # m3u8: ffmpeg -y 会自动覆盖不完整文件
                 _download_queue.insert(0, dl_id)
                 threading.Thread(target=_process_queue, daemon=True).start()
+        _save_dl_tasks()
         handler.send_json({'ok': True})
         return True
     elif path == '/api/download/rename':
