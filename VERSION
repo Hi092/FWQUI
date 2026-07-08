@@ -1,0 +1,15 @@
+FWQUI Version
+=============
+Commit: 4933fed
+Date: 2026-07-08
+Description: fix: 9项bug修复+优化
+
+Backup files:
+  - server_monitor.py.bak
+  - index.html.bak
+
+Restore command:
+  cd /opt/monitor
+  cp server_monitor.py.bak server_monitor.py
+  cp index.html.bak static/index.html
+  systemctl restart monitor
