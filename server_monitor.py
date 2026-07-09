@@ -667,7 +667,9 @@ def _pushplus(title, content):
 _DOWNLOAD_HISTORY_FILE = '/opt/monitor/download_history.json'
 _DL_TASKS_FILE = '/opt/monitor/dl_tasks.json'
 _downloads = {}
-_download_lock = threading.Lock()
+_download_lock = threading.RLock()
+_downloads_cache = []  # 缓存下载状态，避免锁超时时返回"服务器繁忙"
+_downloads_cache_ts = 0
 _download_queue = []
 _active_download = None
 _dl_counter = [0]
@@ -735,21 +737,30 @@ def _save_dl_history(history):
         os.replace(tmp, _DOWNLOAD_HISTORY_FILE)
     except Exception:
         pass
-
 def _save_dl_tasks():
     """持久化下载任务"""
+    _dbg_cnt = len(_downloads)
+    try:
+        with open('/opt/monitor/save_called.log', 'a') as _sf:
+            _sf.write('[' + datetime.now().isoformat() + '] called cnt=' + str(_dbg_cnt) + '\n')
+    except Exception:
+        pass
     try:
         with _download_lock:
             tasks = {}
             for dl_id, dl in _downloads.items():
                 t = {k: v for k, v in dl.items() if not k.startswith('_')}
                 tasks[dl_id] = t
-        tmp = _DL_TASKS_FILE + '.tmp'
+        tmp = _DL_TASKS_FILE + '.tmp.' + str(os.getpid()) + '.' + str(id(object()))
         with open(tmp, 'w') as f:
             json.dump(tasks, f, ensure_ascii=False, indent=2)
         os.replace(tmp, _DL_TASKS_FILE)
-    except Exception:
-        pass
+    except Exception as _save_err:
+        try:
+            with open("/opt/monitor/save_debug.log", "a") as _dbg:
+                _dbg.write("[" + datetime.now().isoformat() + "] SAVE FAILED: " + str(_save_err) + " tasks_count=" + str(len(tasks)) + "\n")
+        except Exception:
+            pass
 
 def _load_dl_tasks():
     """启动时恢复下载任务"""
@@ -761,15 +772,33 @@ def _load_dl_tasks():
         for dl_id, dl in tasks.items():
             status = dl.get('status', '')
             if status in ('completed', 'failed', 'cancelled'):
+                _downloads[dl_id] = dl
                 continue
             if status in ('downloading', 'paused'):
                 dl['status'] = 'interrupted'
                 dl['progress'] = 0
                 dl['downloaded_bytes'] = 0
                 dl['error'] = '服务重启，下载中断' if status == 'downloading' else '服务重启，暂停任务已中断'
+                # 清理可能残留的旧 systemd unit（服务重启后孤立 ffmpeg 进程）
+                unit_name = 'dl-' + dl_id + '.service'
+                try:
+                    subprocess.run(['systemctl', 'stop', unit_name],
+                                 capture_output=True, timeout=5)
+                except Exception:
+                    pass
+                try:
+                    subprocess.run(['systemctl', 'reset-failed', unit_name],
+                                 capture_output=True, timeout=3)
+                except Exception:
+                    pass
             _downloads[dl_id] = dl
+            # 恢复排队任务到下载队列（包括中断的任务）
+            if dl.get('status') in ('queued', 'interrupted'):
+                _download_queue.append(dl_id)
     except Exception:
         pass
+    # 触发队列处理
+    threading.Thread(target=_process_queue, daemon=True).start()
 
 def _validate_mp4(output_path):
     if not output_path or not os.path.exists(output_path):
@@ -845,9 +874,13 @@ def _get_browse_tree(path):
     return {'path': path, 'items': items}
 
 def _get_downloads_status():
-    acquired = _download_lock.acquire(timeout=2)
+    global _downloads_cache, _downloads_cache_ts
+    acquired = _download_lock.acquire(timeout=5)
     if not acquired:
-        return [{'status': 'downloading', 'progress': 0, 'filename': '下载中...', 'position': 'active', 'status_detail': '服务器繁忙'}]
+        # 返回缓存状态，而不是"服务器繁忙"
+        if _downloads_cache:
+            return _downloads_cache
+        return [{'status': 'downloading', 'progress': 0, 'filename': '下载中...', 'position': 'active', 'status_detail': '加载中...'}]
     try:
         result = []
         now_ts = time.time()
@@ -869,6 +902,9 @@ def _get_downloads_status():
                 if dl_id not in seen:
                     result.append(dict(dl))
                     seen.add(dl_id)
+        # 更新缓存
+        _downloads_cache = result
+        _downloads_cache_ts = time.time()
         return result
     finally:
         _download_lock.release()
@@ -959,12 +995,23 @@ def _run_download(dl_id):
         if dl.get('status') in ('cancelling', 'cancelled', 'paused', 'failed', 'completed'):
             return
         dl['status'] = 'downloading'
+        dl['error'] = ''
+        try:
+            with open('/opt/monitor/run_dl_debug.log', 'a') as _dbgf:
+                _dbgf.write('[' + datetime.now().isoformat() + '] _run_download set downloading dl_id=' + str(dl_id) + '\n')
+        except Exception:
+            pass
         # 续传不重置 started_at，保留原始开始时间
         if not dl.get('_resumed'):
             dl['started_at'] = datetime.now().isoformat()
         else:
             dl['_resumed'] = False
         _active_download = dl_id
+    # 立即保存状态，避免进度循环未触发时状态丢失
+    try:
+        _save_dl_tasks()
+    except Exception:
+        pass
     url = dl['url']
     folder = dl.get('folder', '/data/share/视频')
     filename = dl.get('filename', '')
@@ -991,6 +1038,11 @@ def _run_download(dl_id):
             counter += 1
         dl['filename'] = filename
         dl['output_path'] = output_path
+    # 持久化文件名和路径，避免重启后重新生成
+    try:
+        _save_dl_tasks()
+    except Exception:
+        pass
     is_m3u8 = url.endswith('.m3u8')
     try:
         if is_m3u8:
@@ -1027,6 +1079,27 @@ def _run_download(dl_id):
                     except Exception:
                         pass
     finally:
+        # 兜底：如果任务仍为downloading但文件已存在且足够大，标记完成
+        try:
+            with _download_lock:
+                if dl_id in _downloads:
+                    _dl = _downloads[dl_id]
+                    if _dl.get('status') == 'downloading':
+                        _out = _dl.get('output_path', '')
+                        if _out and os.path.exists(_out) and os.path.getsize(_out) > 1024:
+                            _fsize = os.path.getsize(_out)
+                            _dl['status'] = 'completed'
+                            _dl['progress'] = 100
+                            _dl['downloaded_bytes'] = _fsize
+                            _dl['size_mb'] = round(_fsize / 1048576, 1)
+                            _dl['completed_at'] = datetime.now().isoformat()
+                            _dl.pop('status_detail', None)
+                            _dl.pop('total_segments', None)
+                            _dl.pop('downloaded_segments', None)
+                            _save_dl_tasks()
+                            _add_to_history(_dl)
+        except Exception:
+            pass
         with _download_lock:
             if _active_download == dl_id:
                 _active_download = None
@@ -1228,90 +1301,183 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
         dl['status_detail'] = 'ffmpeg下载中...'
     
     unit_name = 'dl-' + dl_id
-    # 清理可能残留的旧 unit（暂停后 systemctl stop 不删除 unit 文件，续传时会冲突）
-    try:
-        subprocess.run(['systemctl', 'reset-failed', unit_name + '.service'],
-                     capture_output=True, timeout=3)
-    except Exception:
-        pass
     enc_args = ['-c', 'copy']  # 默认无损拷贝
+    _ffmpeg_err_log = '/opt/monitor/ffmpeg_error.log'
     proc = subprocess.Popen(
-        ['systemd-run', '--unit', unit_name, '--pipe', '--collect',
-         '-p', 'MemoryMax=400M', '-p', 'MemoryHigh=300M',
-         'ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
+        ['ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
         (['-headers', 'Referer: ' + referer] if referer else []) +
         ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
          '-allowed_extensions', 'ALL', '-allowed_segment_extensions', 'ALL', '-i', m3u8_url] + enc_args +
         ['-loglevel', 'error', output_path],
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=open(_ffmpeg_err_log, 'a'),
         universal_newlines=True
     )
-    _ffmpeg_procs[dl_id] = (proc, unit_name)
-    
-    # 解析 ffmpeg progress 输出
-    # 减少锁竞争：进度每10行更新一次，状态检查每0.5秒一次
+    _ffmpeg_procs[dl_id] = (proc, None)
+    import select as _sel
     progress_counter = 0
     last_status_check = time.time()
     last_size_check = time.time()
-    _last_m3u8_size = 0  # 用于流量增量计算
+    last_progress_time = time.time()
+    _last_m3u8_size = 0
     last_pct = 0
     last_pct_change_time = time.time()
-    for line in proc.stdout:
-        line = line.strip()
-        if line.startswith('out_time='):
+    _raw_fd = proc.stdout.fileno()
+    os.set_blocking(_raw_fd, False)
+    _partial = b''
+    ffmpeg_exited = False
+    try:
+        while True:
+            if not ffmpeg_exited:
+                ret = proc.poll()
+                if ret is not None:
+                    _wg_log('[DL-SELECT] ffmpeg EXITED ret=%s dl_id=%s' % (str(ret), dl_id))
+                    ffmpeg_exited = True
+            # select with short timeout; if ffmpeg already exited, just try reading
+            if ffmpeg_exited:
+                ready = [_raw_fd]
+            else:
+                ready, _, _ = _sel.select([_raw_fd], [], [], 0.5)
+            if ready:
+                try:
+                    chunk = os.read(_raw_fd, 65536)
+                except (BlockingIOError, OSError) as _rderr:
+                    _wg_log('[DL-SELECT] os.read err=%s dl_id=%s' % (str(_rderr), dl_id))
+                    chunk = b''
+                if not chunk:
+                    _wg_log('[DL-SELECT] EOF chunk dl_id=%s partial_len=%d' % (dl_id, len(_partial)))
+                    # EOF: flush partial line if any
+                    if _partial:
+                        _line = _partial.decode('utf-8', errors='replace').strip()
+                        if _line.startswith('out_time='):
+                            try:
+                                t = _line.split('=')[1]
+                                parts = t.split(':')
+                                out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+                                if duration_secs > 0:
+                                    last_pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
+                            except Exception:
+                                pass
+                    break
+                _partial += chunk
+                while b'\n' in _partial:
+                    raw_line, _partial = _partial.split(b'\n', 1)
+                    line = raw_line.decode('utf-8', errors='replace').strip()
+                    if line.startswith('out_time='):
+                        try:
+                            t = line.split('=')[1]
+                            parts = t.split(':')
+                            out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+                            progress_counter += 1
+                            if duration_secs > 0:
+                                pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
+                            else:
+                                pct = 0
+                            if pct != last_pct:
+                                last_pct = pct
+                                last_pct_change_time = time.time()
+                                last_progress_time = time.time()
+                            if progress_counter % 10 == 0:
+                                with _download_lock:
+                                    if dl_id in _downloads:
+                                        _downloads[dl_id]['progress'] = pct
+                                        _downloads[dl_id]['downloaded_segments'] = int(out_secs)
+                                if progress_counter % 200 == 0:
+                                    try:
+                                        _save_dl_tasks()
+                                    except Exception:
+                                        pass
+                        except Exception:
+                            pass
+                    elif line.startswith('total_size='):
+                        try:
+                            ts = int(line.split('=')[1])
+                            if ts > 0:
+                                with _download_lock:
+                                    if dl_id in _downloads:
+                                        _downloads[dl_id]['downloaded_bytes'] = ts
+                        except Exception:
+                            pass
+            # 检查取消/暂停
+            now = time.time()
+            if now - last_status_check > 0.5:
+                last_status_check = now
+                with _download_lock:
+                    if dl_id in _downloads:
+                        s = _downloads[dl_id].get('status', '')
+                        if s == 'cancelling':
+                            _kill_ffmpeg(dl_id)
+                            raise Exception('用户取消')
+                        if s == 'paused':
+                            _kill_ffmpeg(dl_id)
+                            raise Exception('用户暂停')
+                        if last_pct >= 95 and now - last_pct_change_time > 5:
+                            if _downloads[dl_id].get('status_detail') == 'ffmpeg下载中...' or _downloads[dl_id].get('status_detail', '').startswith('m3u8'):
+                                _downloads[dl_id]['status_detail'] = '正在优化文件...'
+            # 实时更新流量
+            if now - last_size_check > 2:
+                last_size_check = now
+                try:
+                    cur_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                    if cur_size > _last_m3u8_size:
+                        delta = cur_size - _last_m3u8_size
+                        _dl_traffic_bytes += delta
+                        _last_m3u8_size = cur_size
+                except Exception:
+                    pass
+            # 防止假死: 无进度超过5分钟就kill
+            if now - last_progress_time > 300:
+                _wg_log('ffmpeg no progress for 300s, killing %s' % dl_id)
+                _kill_ffmpeg(dl_id)
+                raise Exception('ffmpeg无进度超过5分钟')
+    finally:
+        _wg_log('[DL-SELECT] FINALLY dl_id=%s rc=%s' % (dl_id, str(proc.returncode)))
+        try:
+            proc.wait(timeout=30)
+        except Exception:
+            _wg_log('proc.wait TIMEOUT, killing')
             try:
-                t = line.split('=')[1]
-                parts = t.split(':')
-                out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
-                if duration_secs > 0:
-                    pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
-                    if pct != last_pct:
-                        last_pct = pct
-                        last_pct_change_time = time.time()
-                    progress_counter += 1
-                    if progress_counter % 10 == 0:
-                        with _download_lock:
-                            if dl_id in _downloads:
-                                _downloads[dl_id]['progress'] = pct
-                                _downloads[dl_id]['downloaded_segments'] = int(out_secs)
+                proc.kill()
             except Exception:
                 pass
-        # 检查取消/暂停 — 降频到每0.5秒一次
-        now = time.time()
-        if now - last_status_check > 0.5:
-            last_status_check = now
-            with _download_lock:
-                if dl_id in _downloads:
-                    s = _downloads[dl_id].get('status', '')
-                    if s == 'cancelling':
-                        _kill_ffmpeg(dl_id)
-                        raise Exception('用户取消')
-                    if s == 'paused':
-                        _kill_ffmpeg(dl_id)
-                        raise Exception('用户暂停')
-                    # 停滞检测：进度>95%且5秒不变 → 网速归零，ffmpeg在封装
-                    if last_pct >= 95 and now - last_pct_change_time > 5:
-                        if _downloads[dl_id].get('status_detail') == 'ffmpeg下载中...' or _downloads[dl_id].get('status_detail', '').startswith('m3u8'):
-                            _downloads[dl_id]['status_detail'] = '正在优化文件...'
-    # 实时更新流量 — 每2秒读文件大小
-        if now - last_size_check > 2:
-            last_size_check = now
-            try:
-                cur_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
-                if cur_size > _last_m3u8_size:
-                    delta = cur_size - _last_m3u8_size
-                    _dl_traffic_bytes += delta
-                    _last_m3u8_size = cur_size
-            except Exception:
-                pass
-
-    # for 循环结束，ffmpeg 不再输出进度行，此时进入文件收尾阶段
-    with _download_lock:
-        if dl_id in _downloads:
-            _downloads[dl_id]['status_detail'] = '正在优化文件...'
-    proc.wait()
-    stderr_out = proc.stderr.read() if proc.stderr else ''
-    _ffmpeg_procs.pop(dl_id, None)
+            proc.wait()
+        _ffmpeg_procs.pop(dl_id, None)
+    stderr_out = ''
+    try:
+        with open(_ffmpeg_err_log, 'r') as _f:
+            _f.seek(0, 2)
+            # 只读最后 4KB
+            _sz = _f.tell()
+            _f.seek(max(0, _sz - 4096))
+            stderr_out = _f.read()
+    except Exception:
+        pass    
+    # 兜底：不管returncode，文件够大就算完成
+    try:
+        _fsize = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+    except Exception:
+        _fsize = 0
+    _wg_log('[DL-COMP] checking fsize=%d dl_id=%s rc=%s' % (_fsize, dl_id, str(proc.returncode)))
+    if _fsize > 1048576:  # > 1MB
+        with _download_lock:
+            if dl_id in _downloads and _downloads[dl_id].get("status") == "downloading":
+                _dl = _downloads[dl_id]
+                _wg_log('[DL-COMP] MARKING COMPLETE dl_id=%s' % dl_id)
+                _dl["status"] = "completed"
+                _dl["progress"] = 100
+                _dl["downloaded_bytes"] = _fsize
+                _dl["size_mb"] = round(_fsize / 1048576, 1)
+                _dl["completed_at"] = datetime.now().isoformat()
+                _dl.pop("status_detail", None)
+                _save_dl_tasks()
+                _add_to_history(_dl)
+                try:
+                    _pushplus("下载完成: " + _dl.get("filename", ""), "<p>文件: " + _dl.get("filename", "") + "</p><p>大小: " + str(round(_fsize/1048576, 1)) + " MB</p>")
+                except Exception:
+                    pass
+        if dl_id in _downloads and _downloads[dl_id].get("status") == "completed":
+            _active_download = None
+            return
     
     if proc.returncode != 0:
         # 如果是编码/容器不兼容（如 PNG keyframe m3u8），自动重试转码
@@ -1343,81 +1509,134 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                     _downloads[dl_id]['progress'] = 0
             _last_m3u8_size = 0
             unit_name2 = unit_name + '_r'
-            try:
-                subprocess.run(['systemctl', 'reset-failed', unit_name2 + '.service'],
-                             capture_output=True, timeout=3)
-            except Exception:
-                pass
+            _ffmpeg_err_log2 = '/opt/monitor/ffmpeg_error.log'
             enc_args = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'copy']
             proc = subprocess.Popen(
-                ['systemd-run', '--unit', unit_name2, '--pipe', '--collect',
-                 '-p', 'MemoryMax=400M', '-p', 'MemoryHigh=300M',
-                 'ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
+                ['ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
                 (['-headers', 'Referer: ' + referer] if referer else []) +
                 ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
                  '-allowed_extensions', 'ALL', '-allowed_segment_extensions', 'ALL', '-i', m3u8_url] + enc_args +
                 ['-loglevel', 'error', output_path],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=open(_ffmpeg_err_log2, 'a'),
                 universal_newlines=True
             )
-            _ffmpeg_procs[dl_id] = (proc, unit_name2)
+            _ffmpeg_procs[dl_id] = (proc, None)
+            import select as _sel2
             progress_counter = 0
             last_status_check = time.time()
             last_size_check = time.time()
+            last_progress_time = time.time()
             _last_m3u8_size = 0
             last_pct = 0
             last_pct_change_time = time.time()
-            for line in proc.stdout:
-                line = line.strip()
-                if line.startswith('out_time='):
+            _raw_fd2 = proc.stdout.fileno()
+            os.set_blocking(_raw_fd2, False)
+            _partial2 = b''
+            ffmpeg_exited2 = False
+            try:
+                while True:
+                    if not ffmpeg_exited2:
+                        ret = proc.poll()
+                        if ret is not None:
+                            _wg_log('[DL-RETRY] ffmpeg EXITED ret=%s dl_id=%s' % (str(ret), dl_id))
+                            ffmpeg_exited2 = True
+                    if ffmpeg_exited2:
+                        ready2 = [_raw_fd2]
+                    else:
+                        ready2, _, _ = _sel2.select([_raw_fd2], [], [], 0.5)
+                    if ready2:
+                        try:
+                            chunk2 = os.read(_raw_fd2, 65536)
+                        except (BlockingIOError, OSError) as _rderr2:
+                            _wg_log('[DL-RETRY] os.read err=%s dl_id=%s' % (str(_rderr2), dl_id))
+                            chunk2 = b''
+                        if not chunk2:
+                            _wg_log('[DL-RETRY] EOF chunk dl_id=%s partial_len=%d' % (dl_id, len(_partial2)))
+                            if _partial2:
+                                _line2 = _partial2.decode('utf-8', errors='replace').strip()
+                                if _line2.startswith('out_time='):
+                                    try:
+                                        t = _line2.split('=')[1]
+                                        parts = t.split(':')
+                                        out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+                                        if duration_secs > 0:
+                                            last_pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
+                                    except Exception:
+                                        pass
+                            break
+                        _partial2 += chunk2
+                        while b'\n' in _partial2:
+                            raw_line2, _partial2 = _partial2.split(b'\n', 1)
+                            line = raw_line2.decode('utf-8', errors='replace').strip()
+                            if line.startswith('out_time='):
+                                try:
+                                    t = line.split('=')[1]
+                                    parts = t.split(':')
+                                    out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
+                                    if duration_secs > 0:
+                                        pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
+                                        if pct != last_pct:
+                                            last_pct = pct
+                                            last_pct_change_time = time.time()
+                                            last_progress_time = time.time()
+                                        progress_counter += 1
+                                        if progress_counter % 10 == 0:
+                                            with _download_lock:
+                                                if dl_id in _downloads:
+                                                    _downloads[dl_id]['progress'] = pct
+                                                    _downloads[dl_id]['downloaded_segments'] = int(out_secs)
+                                except Exception:
+                                    pass
+                    now = time.time()
+                    if now - last_status_check > 0.5:
+                        last_status_check = now
+                        with _download_lock:
+                            if dl_id in _downloads:
+                                s = _downloads[dl_id].get('status', '')
+                                if s == 'cancelling':
+                                    _kill_ffmpeg(dl_id)
+                                    raise Exception('用户取消')
+                                if s == 'paused':
+                                    _kill_ffmpeg(dl_id)
+                                    raise Exception('用户暂停')
+                                if last_pct >= 95 and now - last_pct_change_time > 5:
+                                    if _downloads[dl_id].get('status_detail') in ('ffmpeg下载中...', '转码中...') or _downloads[dl_id].get('status_detail', '').startswith('m3u8'):
+                                        _downloads[dl_id]['status_detail'] = '正在优化文件...'
+                    if now - last_size_check > 2:
+                        last_size_check = now
+                        try:
+                            cur_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                            if cur_size > _last_m3u8_size:
+                                delta = cur_size - _last_m3u8_size
+                                _dl_traffic_bytes += delta
+                                _last_m3u8_size = cur_size
+                        except Exception:
+                            pass
+                    if now - last_progress_time > 300:
+                        _wg_log('ffmpeg retry no progress for 300s, killing %s' % dl_id)
+                        _kill_ffmpeg(dl_id)
+                        raise Exception('ffmpeg无进度超过5分钟')
+            finally:
+                try:
+                    proc.wait(timeout=30)
+                except Exception:
+                    _wg_log('proc.wait2 TIMEOUT, killing')
                     try:
-                        t = line.split('=')[1]
-                        parts = t.split(':')
-                        out_secs = float(parts[0])*3600 + float(parts[1])*60 + float(parts[2])
-                        if duration_secs > 0:
-                            pct = min(round(out_secs / duration_secs * 100, 1), 99.9)
-                            if pct != last_pct:
-                                last_pct = pct
-                                last_pct_change_time = time.time()
-                            progress_counter += 1
-                            if progress_counter % 10 == 0:
-                                with _download_lock:
-                                    if dl_id in _downloads:
-                                        _downloads[dl_id]['progress'] = pct
-                                        _downloads[dl_id]['downloaded_segments'] = int(out_secs)
+                        proc.kill()
                     except Exception:
                         pass
-                now = time.time()
-                if now - last_status_check > 0.5:
-                    last_status_check = now
-                    with _download_lock:
-                        if dl_id in _downloads:
-                            s = _downloads[dl_id].get('status', '')
-                            if s == 'cancelling':
-                                _kill_ffmpeg(dl_id)
-                                raise Exception('用户取消')
-                            if s == 'paused':
-                                _kill_ffmpeg(dl_id)
-                                raise Exception('用户暂停')
-                            if last_pct >= 95 and now - last_pct_change_time > 5:
-                                if _downloads[dl_id].get('status_detail') in ('ffmpeg下载中...', '转码中...') or _downloads[dl_id].get('status_detail', '').startswith('m3u8'):
-                                    _downloads[dl_id]['status_detail'] = '正在优化文件...'
-                if now - last_size_check > 2:
-                    last_size_check = now
-                    try:
-                        cur_size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
-                        if cur_size > _last_m3u8_size:
-                            delta = cur_size - _last_m3u8_size
-                            _dl_traffic_bytes += delta
-                            _last_m3u8_size = cur_size
-                    except Exception:
-                        pass
-            with _download_lock:
-                if dl_id in _downloads:
-                    _downloads[dl_id]['status_detail'] = '正在优化文件...'
-            proc.wait()
-            stderr_out = proc.stderr.read() if proc.stderr else ''
-            _ffmpeg_procs.pop(dl_id, None)
+                    proc.wait()
+                _ffmpeg_procs.pop(dl_id, None)
+            stderr_out = ''
+            try:
+                with open(_ffmpeg_err_log2, 'r') as _f:
+                    _f.seek(0, 2)
+                    _sz = _f.tell()
+                    _f.seek(max(0, _sz - 4096))
+                    stderr_out = _f.read()
+            except Exception:
+                pass
 
     if proc.returncode != 0:
         try:
@@ -1441,7 +1660,6 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
         raise Exception('ffmpeg 失败: ' + (clean_err[:500] if clean_err else '返回码 ' + str(proc.returncode)))
     
     # 文件已由 ffmpeg 直接写入最终路径
-    
     size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
     if size > _last_m3u8_size:
         _dl_traffic_bytes += (size - _last_m3u8_size)
@@ -1474,6 +1692,83 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
     except Exception:
         pass
 
+def _periodic_save():
+    """定期保存下载状态到磁盘，不依赖ffmpeg输出"""
+    import time as _t
+    while True:
+        _t.sleep(10)
+        try:
+            with _download_lock:
+                has_active = any(dl.get('status') == 'downloading' for dl in _downloads.values())
+            if has_active:
+                _save_dl_tasks()
+        except Exception:
+            pass
+
+
+def _wg_log(msg):
+    with open("/opt/monitor/watchdog_debug.log", "a") as _f:
+        _f.write("[%s] %s\n" % (datetime.now().strftime("%H:%M:%S"), msg))
+
+def _download_watchdog():
+    """看门狗：检测下载完成但状态未更新的情况"""
+    import time as _t
+    while True:
+        _t.sleep(5)
+        try:
+            with _download_lock:
+                snapshot = list(_downloads.items())
+            _wg_log("tick: %d tasks, procs=%d" % (len(snapshot), len(_ffmpeg_procs)))
+            for dl_id, dl in snapshot:
+                if dl.get("status") != "downloading":
+                    continue
+                _wg_log("checking %s prog=%s" % (dl_id, dl.get("progress")))
+                proc_info = _ffmpeg_procs.get(dl_id)
+                proc_alive = False
+                if proc_info:
+                    proc, _ = proc_info
+                    poll_result = proc.poll()
+                    if poll_result is None:
+                        # poll says running, but double-check PID exists
+                        try:
+                            os.kill(proc.pid, 0)
+                            proc_alive = True
+                            _wg_log("ffmpeg alive pid=%d for %s" % (proc.pid, dl_id))
+                        except OSError:
+                            proc_alive = False
+                            _wg_log("ffmpeg PID %d dead (stale proc obj) for %s" % (proc.pid, dl_id))
+                    else:
+                        _wg_log("ffmpeg exited code=%s for %s" % (poll_result, dl_id))
+                else:
+                    _wg_log("no ffmpeg proc for %s" % dl_id)
+                if proc_alive:
+                    continue
+                out_path = dl.get("output_path", "")
+                if out_path and os.path.exists(out_path):
+                    fsize = os.path.getsize(out_path)
+                    _wg_log("file exists: %s size=%d" % (out_path, fsize))
+                    if fsize > 1024:
+                        with _download_lock:
+                            if dl_id in _downloads:
+                                _dl = _downloads[dl_id]
+                                if _dl.get("status") == "downloading":
+                                    _dl["status"] = "completed"
+                                    _dl["progress"] = 100
+                                    _dl["downloaded_bytes"] = fsize
+                                    _dl["size_mb"] = round(fsize / 1048576, 1)
+                                    _dl["completed_at"] = datetime.now().isoformat()
+                                    _dl.pop("status_detail", None)
+                                    _save_dl_tasks()
+                                    _add_to_history(_dl)
+                                    _wg_log("MARKED COMPLETE %s size=%dMB" % (dl_id, round(fsize/1048576)))
+                                    try:
+                                        _pushplus("下载完成(看门狗): " + _dl.get("filename", ""),
+                                                   "<p>文件: " + _dl.get("filename", "") + "</p><p>大小: " + str(_dl.get("size_mb", 0)) + " MB</p>")
+                                    except Exception:
+                                        pass
+        except Exception as e:
+            _wg_log("EXCEPTION: %s" % e)
+
 def _process_queue():
     global _active_download
     with _download_lock:
@@ -1483,9 +1778,42 @@ def _process_queue():
             return
         next_id = _download_queue.pop(0)
         if next_id not in _downloads:
-            _process_queue()
             return
-    t = threading.Thread(target=_run_download, args=(next_id,), daemon=True)
+    def _safe_run(did=next_id):
+        try:
+            _run_download(did)
+        except Exception as _e:
+            import traceback
+            try:
+                with open('/opt/monitor/dl_error.log', 'a') as _ef:
+                    _ef.write('[' + datetime.now().isoformat() + '] THREAD CRASH dl_id=' + str(did) + '\n')
+                    _ef.write(traceback.format_exc() + '\n\n')
+            except Exception:
+                pass
+            try:
+                with _download_lock:
+                    if did in _downloads and _downloads[did].get('status') == 'downloading':
+                        _out = _downloads[did].get('output_path', '')
+                        if _out and os.path.exists(_out) and os.path.getsize(_out) > 1048576:
+                            _fsize = os.path.getsize(_out)
+                            _downloads[did]['status'] = 'completed'
+                            _downloads[did]['progress'] = 100
+                            _downloads[did]['downloaded_bytes'] = _fsize
+                            _downloads[did]['size_mb'] = round(_fsize / 1048576, 1)
+                            _downloads[did]['completed_at'] = datetime.now().isoformat()
+                            _save_dl_tasks()
+                            _add_to_history(_downloads[did])
+                        else:
+                            _downloads[did]['status'] = 'failed'
+                            _downloads[did]['error'] = '线程崩溃: ' + str(_e)[:200]
+                            _save_dl_tasks()
+            except Exception:
+                pass
+            global _active_download
+            if _active_download == did:
+                _active_download = None
+            _process_queue()
+    t = threading.Thread(target=_safe_run, daemon=True)
     t.start()
 
 def _start_download(url, folder='/data/share/视频', filename='', referer=''):
@@ -3199,6 +3527,9 @@ server.timeout = 30
 
 # 启动网络流量历史记录器
 _load_dl_tasks()
+# 启动下载看门狗和定期保存线程
+threading.Thread(target=_download_watchdog, daemon=True).start()
+threading.Thread(target=_periodic_save, daemon=True).start()
 _start_net_history_recorder()
 _start_service_traffic_collector()
 # 立即记录一次当前流量

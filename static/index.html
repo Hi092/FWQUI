@@ -232,6 +232,12 @@ body.dark textarea{background:#1c1e24;color:#e4e4e7;border-color:#2a2d35}
 .np-dl-fill{height:100%;background:#7c5cfc;border-radius:2px;transition:width .3s}
 .np-dl-fill.paused{background:#f59e0b}
 .dl-progress-fill.fail{background:#f87171}
+.dl-completed-item{background:#f0fdf4!important;border:1px solid #bbf7d0!important}
+.dl-completed-item .dl-queue-info{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.dl-completed-item .dl-queue-name{flex:1 1 100%;font-size:13px}
+.dl-completed-item .dl-queue-meta{flex:none;font-size:11px;color:#059669;font-weight:500}
+.dl-completed-item .dl-completed-path{flex:1 1 100%;font-size:10px;color:#9ca3af;word-break:break-all;margin-top:-2px}
+.dl-completed-item .dl-completed-btns{display:flex;gap:4px;margin-left:auto;align-self:center}
 .dl-empty{text-align:center;color:#9ca3af;font-size:12px;padding:20px}
 /* 文件浏览器 */
 .fb-breadcrumb{display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-bottom:10px;font-size:12px}
@@ -1447,11 +1453,22 @@ function renderDlItem(dl){
     }else if(dl.status==='queued'){
         h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')">取消</button>';
     }else if(dl.status==='completed'){
-        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
-        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="removeDownload(\''+dl.id+'\')" style="margin-left:3px">x</button>';
+        h+='</div>';
+        var ct=dl.completed_at?dl.completed_at.substring(5,16).replace('T',' '):'';
+        var sizeStr2=dl.size_mb?dl.size_mb+' MB':'';
+        var metaStr2=sizeStr2+(ct?' · '+ct:'');
         var folderShow=dl.folder||'';
-        if(folderShow.length>30)folderShow='...'+folderShow.slice(-27);
-        h+='<div style="font-size:10px;color:#9ca3af;word-break:break-all;flex-basis:100%;margin-top:2px">'+folderShow+'/'+dl.filename+'</div>';
+        if(folderShow.length>40)folderShow='...'+folderShow.slice(-37);
+        var h2='<div class="dl-queue-item dl-completed-item">';
+        h2+='<div class="dl-queue-status completed"></div>';
+        h2+='<div class="dl-queue-info">';
+        h2+='<div class="dl-queue-name" title="'+dl.url+'" id="dl-name-'+dl.id+'">'+name+'</div>';
+        h2+='<div class="dl-queue-meta">'+metaStr2+'</div>';
+        h2+='<div class="dl-completed-path" title="'+folderShow+'/'+(dl.filename||'')+'">'+folderShow+'</div>';
+        h2+='<div class="dl-completed-btns">';
+        h2+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
+        h2+='</div></div></div>';
+        return h2;
     }else{
         h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="removeDownload(\''+dl.id+'\')">x</button>';
     }
@@ -2936,7 +2953,7 @@ function updateBellBadge(){
 <!-- 通知面板 -->
 <div class="np-overlay" id="np-overlay" onclick="closeNotify()"></div>
 <div class="np-panel" id="np-panel">
-<div class="np-h"><span class="np-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="vertical-align:-3px;margin-right:4px"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>通知</span><button class="np-close" onclick="closeNotify()">✕</button></div>
+<div class="np-h"><span class="np-title"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#374151" stroke-width="1.5" style="vertical-align:-3px;margin-right:4px"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>通知</span><button class="np-close" onclick="closeNotify()">x</button></div>
 <div class="np-body" id="np-body"><div class="np-empty"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><div>暂无通知</div></div></div>
 </div>
 
