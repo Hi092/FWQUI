@@ -1139,9 +1139,9 @@ def _download_direct(dl, url, output_path):
     
     if use_aria2 and existing_bytes == 0:
         # aria2c 多线程并发下载（默认 5 线程）
-        aria2_cmd = ['systemd-run', '--pipe', '--collect', '-p', 'MemoryMax=300M',
+        aria2_cmd = ['systemd-run', '--wait', '--pipe', '--collect', '-p', 'MemoryMax=300M',
                      'aria2c', '-x', '5', '-s', '5', '--connect-timeout=30',
-                     '--max-time=7200', '--summary-interval=1', '-o', output_path, url]
+                     '--timeout=600', '--summary-interval=1', '-o', output_path, url]
         proc = subprocess.Popen(aria2_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
         using_aria2 = True
     else:
@@ -1242,7 +1242,223 @@ def _download_direct(dl, url, output_path):
     else:
         raise Exception('curl 返回码 ' + str(proc.returncode))
 
+def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
+    """处理PNG伪装的m3u8分片：跳过PNG头部提取真实视频数据"""
+    global _dl_traffic_bytes
+    dl_id = dl['id']
+    
+    # 下载m3u8内容
+    m3u8_content = subprocess.check_output(
+        ['curl', '-sL', '--max-time', '30'] +
+        (['-H', 'Referer: ' + referer] if referer else []) +
+        [m3u8_url],
+        timeout=35, stderr=subprocess.DEVNULL
+    ).decode('utf-8', errors='replace')
+    
+    # 检查是否master playlist
+    sub_playlists = [l.strip() for l in m3u8_content.split(chr(10))
+                     if l.strip() and not l.startswith('#') and '.m3u8' in l]
+    if sub_playlists:
+        best = sub_playlists[-1].strip()
+        base_url = m3u8_url.rsplit('/', 1)[0]
+        if not best.startswith('http'):
+            if best.startswith('/'):
+                pu = urlparse(m3u8_url)
+                best = pu.scheme + '://' + pu.netloc + best
+            else:
+                best = base_url + '/' + best
+        m3u8_url = best
+        m3u8_content = subprocess.check_output(
+            ['curl', '-sL', '--max-time', '30'] +
+            (['-H', 'Referer: ' + referer] if referer else []) +
+            [m3u8_url],
+            timeout=35, stderr=subprocess.DEVNULL
+        ).decode('utf-8', errors='replace')
+    
+    # 提取分片URL
+    segment_urls = [l.strip() for l in m3u8_content.split(chr(10))
+                    if l.strip() and not l.startswith('#')]
+    total_segments = len(segment_urls)
+    
+    if total_segments == 0:
+        raise Exception('无分片数据')
+    
+    _wg_log('[PNG-M3U8] 共 %d 个分片' % total_segments)
+    
+    with _download_lock:
+        if dl_id in _downloads:
+            _downloads[dl_id]['total_segments'] = total_segments
+    
+    # 临时目录
+    tmp_dir = '/tmp/m3u8_segments_' + dl_id
+    os.makedirs(tmp_dir, exist_ok=True)
+    
+    # 下载并提取分片
+    downloaded_files = []
+    for i, seg_url in enumerate(segment_urls):
+        # 检查取消/暂停
+        with _download_lock:
+            if dl_id in _downloads:
+                s = _downloads[dl_id].get('status', '')
+                if s == 'cancelling':
+                    raise Exception('用户取消')
+                if s == 'paused':
+                    raise Exception('用户暂停')
+        
+        # 处理相对URL
+        if not seg_url.startswith('http'):
+            base = m3u8_url.rsplit('/', 1)[0]
+            if seg_url.startswith('/'):
+                pu = urlparse(m3u8_url)
+                seg_url = pu.scheme + '://' + pu.netloc + seg_url
+            else:
+                seg_url = base + '/' + seg_url
+        
+        # 下载分片
+        raw_file = os.path.join(tmp_dir, 'raw_%05d.ts' % i)
+        clean_file = os.path.join(tmp_dir, 'seg_%05d.ts' % i)
+        
+        try:
+            subprocess.run(
+                ['curl', '-sL', '--max-time', '30', '--connect-timeout', '10'] +
+                (['-H', 'Referer: ' + referer] if referer else []) +
+                ['-o', raw_file, seg_url],
+                timeout=35, check=True
+            )
+        except Exception as e:
+            _wg_log('[PNG-M3U8] 分片%d下载失败: %s' % (i, str(e)))
+            continue
+        
+        # 检测并跳过PNG头部
+        try:
+            with open(raw_file, 'rb') as f:
+                header = f.read(512)
+            
+            # 查找FFmpeg标记
+            ffmpeg_pos = header.find(b'FFmpeg')
+            if ffmpeg_pos > 0:
+                # 跳过PNG头部，提取真实TS数据
+                with open(raw_file, 'rb') as fin:
+                    fin.seek(ffmpeg_pos)
+                    data = fin.read()
+                with open(clean_file, 'wb') as fout:
+                    fout.write(data)
+            else:
+                # 无PNG伪装，直接使用
+                os.rename(raw_file, clean_file)
+        except Exception:
+            os.rename(raw_file, clean_file)
+        
+        downloaded_files.append(clean_file)
+        
+        # 更新进度
+        pct = round((i + 1) / total_segments * 95, 1)
+        with _download_lock:
+            if dl_id in _downloads:
+                _downloads[dl_id]['progress'] = pct
+                _downloads[dl_id]['downloaded_segments'] = i + 1
+                _downloads[dl_id]['status_detail'] = '分片 %d/%d' % (i + 1, total_segments)
+        
+        # 每下载10个分片释放内存
+        if (i + 1) % 10 == 0:
+            _dl_traffic_bytes += os.path.getsize(clean_file) if os.path.exists(clean_file) else 0
+    
+    if not downloaded_files:
+        raise Exception('无有效分片')
+    
+    _wg_log('[PNG-M3U8] 下载完成，%d个有效分片，开始合并' % len(downloaded_files))
+    
+    # 创建concat列表
+    concat_file = os.path.join(tmp_dir, 'concat.txt')
+    with open(concat_file, 'w') as f:
+        for fp in sorted(downloaded_files):
+            f.write("file '%s'\n" % fp)
+    
+    # 合并分片
+    with _download_lock:
+        if dl_id in _downloads:
+            _downloads[dl_id]['status_detail'] = '合并分片...'
+            _downloads[dl_id]['progress'] = 96
+    
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
+             '-c', 'copy', output_path],
+            timeout=3600, check=True,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+    except Exception as e:
+        raise Exception('合并失败: %s' % str(e))
+    
+    # 清理临时文件
+    try:
+        import shutil
+        shutil.rmtree(tmp_dir)
+    except Exception:
+        pass
+    
+    # 标记完成
+    fsize = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+    with _download_lock:
+        if dl_id in _downloads and _downloads[dl_id].get('status') == 'downloading':
+            _dl = _downloads[dl_id]
+            _dl['status'] = 'completed'
+            _dl['progress'] = 100
+            _dl['downloaded_bytes'] = fsize
+            _dl['size_mb'] = round(fsize / 1048576, 1)
+            _dl['completed_at'] = datetime.now().isoformat()
+            _dl.pop('status_detail', None)
+            _save_dl_tasks()
+            _add_to_history(_dl)
+            try:
+                _pushplus('下载完成: ' + _dl.get('filename', ''),
+                         '<p>文件: ' + _dl.get('filename', '') + '</p><p>大小: ' + str(round(fsize/1048576, 1)) + ' MB</p>')
+            except Exception:
+                pass
+
 def _download_m3u8(dl, m3u8_url, output_path, referer=''):
+    # 检测是否PNG伪装的m3u8（分片返回假PNG图片）
+    try:
+        _test_m3u8 = subprocess.check_output(
+            ['curl', '-sL', '--max-time', '15'] +
+            (['-H', 'Referer: ' + referer] if referer else []) +
+            [m3u8_url],
+            timeout=20, stderr=subprocess.DEVNULL
+        ).decode('utf-8', errors='replace')
+        _test_segments = [l.strip() for l in _test_m3u8.split(chr(10))
+                         if l.strip() and not l.startswith('#')]
+        if _test_segments:
+            # 下载第一个分片检测
+            _test_url = _test_segments[0]
+            if not _test_url.startswith('http'):
+                _base = m3u8_url.rsplit('/', 1)[0]
+                if _test_url.startswith('/'):
+                    _pu = urlparse(m3u8_url)
+                    _test_url = _pu.scheme + '://' + _pu.netloc + _test_url
+                else:
+                    _test_url = _base + '/' + _test_url
+            
+            _test_file = '/tmp/m3u8_png_test.ts'
+            subprocess.run(
+                ['curl', '-sL', '--max-time', '10', '-o', _test_file, _test_url],
+                timeout=15, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            
+            if os.path.exists(_test_file):
+                with open(_test_file, 'rb') as f:
+                    _magic = f.read(8)
+                # 检测PNG魔数
+                if _magic[:4] == bytes([0x89, 0x50, 0x4e, 0x47]):
+                    _wg_log('[PNG-M3U8] 检测到PNG伪装分片，切换手动下载模式')
+                    with _download_lock:
+                        if dl_id in _downloads:
+                            _downloads[dl_id]['status_detail'] = 'PNG伪装模式下载中...'
+                    os.remove(_test_file)
+                    return _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer)
+                os.remove(_test_file)
+    except Exception as _e:
+        _wg_log('[PNG-M3U8] 检测异常: %s' % str(_e))
+
     """用 ffmpeg 直接下载 m3u8，比逐个 curl ts 分片快 10 倍"""
     global _dl_traffic_bytes
     dl_id = dl['id']
@@ -1723,24 +1939,42 @@ def _download_watchdog():
                 if dl.get("status") != "downloading":
                     continue
                 _wg_log("checking %s prog=%s" % (dl_id, dl.get("progress")))
-                proc_info = _ffmpeg_procs.get(dl_id)
+                # Check both _ffmpeg_procs and _direct_procs (aria2c/curl)
                 proc_alive = False
+                
+                # First check _ffmpeg_procs
+                proc_info = _ffmpeg_procs.get(dl_id)
                 if proc_info:
                     proc, _ = proc_info
                     poll_result = proc.poll()
                     if poll_result is None:
-                        # poll says running, but double-check PID exists
                         try:
                             os.kill(proc.pid, 0)
                             proc_alive = True
                             _wg_log("ffmpeg alive pid=%d for %s" % (proc.pid, dl_id))
                         except OSError:
                             proc_alive = False
-                            _wg_log("ffmpeg PID %d dead (stale proc obj) for %s" % (proc.pid, dl_id))
+                            _wg_log("ffmpeg PID %d dead for %s" % (proc.pid, dl_id))
                     else:
                         _wg_log("ffmpeg exited code=%s for %s" % (poll_result, dl_id))
-                else:
-                    _wg_log("no ffmpeg proc for %s" % dl_id)
+                
+                # Then check _direct_procs (aria2c/curl) if ffmpeg not found
+                if not proc_alive:
+                    direct_proc = _direct_procs.get(dl_id)
+                    if direct_proc:
+                        poll_result = direct_proc.poll()
+                        if poll_result is None:
+                            try:
+                                os.kill(direct_proc.pid, 0)
+                                proc_alive = True
+                                _wg_log("direct alive pid=%d for %s" % (direct_proc.pid, dl_id))
+                            except OSError:
+                                proc_alive = False
+                                _wg_log("direct PID %d dead for %s" % (direct_proc.pid, dl_id))
+                        else:
+                            _wg_log("direct exited code=%s for %s" % (poll_result, dl_id))
+                    else:
+                        _wg_log("no proc for %s" % dl_id)
                 if proc_alive:
                     continue
                 out_path = dl.get("output_path", "")
