@@ -1428,6 +1428,9 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
                 pass
 
 def _download_m3u8(dl, m3u8_url, output_path, referer=''):
+    # 记录开始时的文件大小，用于watchdog判断
+    dl['_file_size_at_start'] = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+    
     # 检测是否PNG伪装的m3u8（分片返回假PNG图片）
     try:
         _test_m3u8 = subprocess.check_output(
