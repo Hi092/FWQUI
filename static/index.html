@@ -1445,13 +1445,16 @@ function renderDlItem(dl){
     h+='<div class="dl-progress-bar"><div class="dl-progress-fill '+progClass+'" style="width:'+prog+'%"></div></div>';
     h+='</div>';
     if(dl.status==='downloading'){
-        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="pauseDownload(\''+dl.id+'\')">暂停</button>';
+        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
+        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="pauseDownload(\''+dl.id+'\')" style="margin-left:3px">暂停</button>';
         h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')" style="margin-left:3px">取消</button>';
     }else if(dl.status==='paused'){
-        h+='<button class="dl-btn dl-btn-purple dl-btn-sm" onclick="resumeDownload(\''+dl.id+'\')">继续</button>';
+        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
+        h+='<button class="dl-btn dl-btn-purple dl-btn-sm" onclick="resumeDownload(\''+dl.id+'\')" style="margin-left:3px">继续</button>';
         h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')" style="margin-left:3px">取消</button>';
     }else if(dl.status==='queued'){
-        h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')">取消</button>';
+        h+='<button class="dl-btn dl-btn-gray dl-btn-sm" onclick="renameDownload(\''+dl.id+'\')" title="改名">改名</button>';
+        h+='<button class="dl-btn dl-btn-red dl-btn-sm" onclick="cancelDownload(\''+dl.id+'\')" style="margin-left:3px">取消</button>';
     }else if(dl.status==='completed'){
         h+='</div>';
         var ct=dl.completed_at?dl.completed_at.substring(5,16).replace('T',' '):'';
