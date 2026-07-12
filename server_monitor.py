@@ -996,6 +996,12 @@ def _run_download(dl_id):
             return
         dl['status'] = 'downloading'
         dl['error'] = ''
+        # 记录下载开始时的文件大小，用于finally块判断
+        _out_for_check = dl.get('output_path', '')
+        if _out_for_check and os.path.exists(_out_for_check):
+            dl['_file_size_at_start'] = os.path.getsize(_out_for_check)
+        else:
+            dl['_file_size_at_start'] = 0
         try:
             with open('/opt/monitor/run_dl_debug.log', 'a') as _dbgf:
                 _dbgf.write('[' + datetime.now().isoformat() + '] _run_download set downloading dl_id=' + str(dl_id) + '\n')
@@ -1079,25 +1085,30 @@ def _run_download(dl_id):
                     except Exception:
                         pass
     finally:
-        # 兜底：如果任务仍为downloading但文件已存在且足够大，标记完成
+        # 兜底：仅当下载进程真正完成（不在队列中、非续传刚启动）才标记完成
+        # 避免resume后文件已存在就误判为完成
         try:
             with _download_lock:
                 if dl_id in _downloads:
                     _dl = _downloads[dl_id]
-                    if _dl.get('status') == 'downloading':
+                    # 只有当前活跃下载且状态仍为downloading才检查
+                    if _dl.get('status') == 'downloading' and _active_download == dl_id:
                         _out = _dl.get('output_path', '')
                         if _out and os.path.exists(_out) and os.path.getsize(_out) > 1024:
+                            # 额外检查：文件大小是否比开始时增长了（排除resume场景）
+                            _started = _dl.get('_file_size_at_start', 0)
                             _fsize = os.path.getsize(_out)
-                            _dl['status'] = 'completed'
-                            _dl['progress'] = 100
-                            _dl['downloaded_bytes'] = _fsize
-                            _dl['size_mb'] = round(_fsize / 1048576, 1)
-                            _dl['completed_at'] = datetime.now().isoformat()
-                            _dl.pop('status_detail', None)
-                            _dl.pop('total_segments', None)
-                            _dl.pop('downloaded_segments', None)
-                            _save_dl_tasks()
-                            _add_to_history(_dl)
+                            if _fsize > _started:
+                                _dl['status'] = 'completed'
+                                _dl['progress'] = 100
+                                _dl['downloaded_bytes'] = _fsize
+                                _dl['size_mb'] = round(_fsize / 1048576, 1)
+                                _dl['completed_at'] = datetime.now().isoformat()
+                                _dl.pop('status_detail', None)
+                                _dl.pop('total_segments', None)
+                                _dl.pop('downloaded_segments', None)
+                                _save_dl_tasks()
+                                _add_to_history(_dl)
         except Exception:
             pass
         with _download_lock:
@@ -1977,11 +1988,34 @@ def _download_watchdog():
                         _wg_log("no proc for %s" % dl_id)
                 if proc_alive:
                     continue
+                # 进程不存在：只有明确正常退出(returncode=0)才标完成
+                # 避免resume后进程还没启动就被误判
+                proc_returncode = None
+                if proc_info:
+                    proc_returncode = proc_info[0].poll()
+                if direct_proc:
+                    proc_returncode = direct_proc.poll()
+                # 只有进程正常退出(0)或确定不存在(不在任何字典里)才检查
+                if proc_returncode is not None and proc_returncode != 0:
+                    # 进程异常退出，标失败
+                    with _download_lock:
+                        if dl_id in _downloads:
+                            _dl = _downloads[dl_id]
+                            if _dl.get("status") == "downloading":
+                                _dl["status"] = "failed"
+                                _dl["error"] = "进程异常退出 code=" + str(proc_returncode)
+                                _dl["completed_at"] = datetime.now().isoformat()
+                                _save_dl_tasks()
+                                _wg_log("MARKED FAILED %s code=%s" % (dl_id, proc_returncode))
+                    continue
+                # 进程正常退出或不存在，检查是否刚启动(resume场景)
                 out_path = dl.get("output_path", "")
                 if out_path and os.path.exists(out_path):
                     fsize = os.path.getsize(out_path)
                     _wg_log("file exists: %s size=%d" % (out_path, fsize))
-                    if fsize > 1024:
+                    # 检查文件大小是否比开始时增长了
+                    _started = dl.get("_file_size_at_start", 0)
+                    if fsize > _started and fsize > 1024:
                         with _download_lock:
                             if dl_id in _downloads:
                                 _dl = _downloads[dl_id]
