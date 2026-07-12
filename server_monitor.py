@@ -1049,7 +1049,7 @@ def _run_download(dl_id):
         _save_dl_tasks()
     except Exception:
         pass
-    is_m3u8 = url.endswith('.m3u8')
+    is_m3u8 = urlparse(url).path.endswith('.m3u8')
     try:
         if is_m3u8:
             _download_m3u8(dl, url, output_path, dl.get('referer', ''))
