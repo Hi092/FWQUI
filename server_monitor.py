@@ -1531,7 +1531,7 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
         dl['status_detail'] = 'ffmpeg下载中...'
     
     unit_name = 'dl-' + dl_id
-    enc_args = ['-c', 'copy', '-movflags', '+faststart']  # 默认无损拷贝，faststart让moov在开头
+    enc_args = ['-c', 'copy']  # 默认无损拷贝，不使用faststart避免优化阶段被watchdog误杀
     _ffmpeg_err_log = '/opt/monitor/ffmpeg_error.log'
     proc = subprocess.Popen(
         ['ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +

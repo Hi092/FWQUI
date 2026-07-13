@@ -1,21 +1,25 @@
 {
-  "dl_1783479766000_0": {
-    "id": "dl_1783479766000_0",
-    "url": "https://v10.baofeng10.com/video/dongbeiqimiaogushizhiyaolanqu/8933ce4386fa/index.m3u8",
-    "folder": "/data/share/usb",
-    "filename": "index.mp4",
-    "status": "paused",
-    "progress": 1.1,
-    "downloaded_bytes": 8912944,
-    "created_at": "2026-07-08T11:02:46.000635",
+  "dl_1783932559200_2": {
+    "id": "dl_1783932559200_2",
+    "url": "https://hn.bfvvs.com/play/eXDrM1ve/index.m3u8",
+    "folder": "/data/share/电影",
+    "filename": "功夫女组.mp4",
+    "status": "completed",
+    "progress": 100,
+    "downloaded_bytes": 0,
+    "created_at": "2026-07-13T16:49:19.200219",
     "is_m3u8": true,
     "referer": "",
-    "started_at": "2026-07-08T11:02:46.010697",
-    "output_path": "/data/share/usb/index.mp4",
-    "speed_mbps": 0.06,
-    "eta_sec": 12681,
-    "total_segments": 3557,
-    "status_detail": "ffmpeg下载中...",
-    "downloaded_segments": 40
+    "error": "",
+    "started_at": "2026-07-13T16:49:19.204546",
+    "output_path": "/data/share/电影/功夫女组.mp4",
+    "speed_mbps": 0.29,
+    "eta_sec": 179,
+    "total_segments": 6073,
+    "total_bytes": 3109568011,
+    "status_detail": "正在优化文件...",
+    "downloaded_segments": 6049,
+    "size_mb": 0.0,
+    "completed_at": "2026-07-13T17:50:29.448459"
   }
 }
