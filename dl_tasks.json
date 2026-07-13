@@ -1,25 +1,24 @@
 {
-  "dl_1783932559200_2": {
-    "id": "dl_1783932559200_2",
+  "dl_1783937281773_0": {
+    "id": "dl_1783937281773_0",
     "url": "https://hn.bfvvs.com/play/eXDrM1ve/index.m3u8",
     "folder": "/data/share/电影",
-    "filename": "功夫女组.mp4",
+    "filename": "功夫女足.mp4",
     "status": "completed",
     "progress": 100,
-    "downloaded_bytes": 0,
-    "created_at": "2026-07-13T16:49:19.200219",
+    "downloaded_bytes": 1442596887,
+    "created_at": "2026-07-13T18:08:01.773132",
     "is_m3u8": true,
     "referer": "",
     "error": "",
-    "started_at": "2026-07-13T16:49:19.204546",
-    "output_path": "/data/share/电影/功夫女组.mp4",
-    "speed_mbps": 0.29,
-    "eta_sec": 179,
+    "started_at": "2026-07-13T18:08:01.792077",
+    "speed_mbps": 0.47,
+    "eta_sec": 2609,
+    "output_path": "/data/share/电影/index.mp4",
     "total_segments": 6073,
     "total_bytes": 3109568011,
-    "status_detail": "正在优化文件...",
-    "downloaded_segments": 6049,
-    "size_mb": 0.0,
-    "completed_at": "2026-07-13T17:50:29.448459"
+    "downloaded_segments": 6048,
+    "size_mb": 1375.8,
+    "completed_at": "2026-07-13T19:07:20.119955"
   }
 }

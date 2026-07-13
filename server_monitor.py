@@ -1420,6 +1420,20 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
             _dl['completed_at'] = datetime.now().isoformat()
             _dl.pop('status_detail', None)
             _save_dl_tasks()
+            # 检查文件名是否被用户改过
+            try:
+                actual_filename = os.path.basename(output_path)
+                expected_filename = _dl.get('filename', '')
+                if expected_filename and actual_filename != expected_filename:
+                    new_path = os.path.join(os.path.dirname(output_path), expected_filename)
+                    if os.path.exists(output_path) and not os.path.exists(new_path):
+                        os.rename(output_path, new_path)
+                        output_path = new_path
+                        _dl['output_path'] = new_path
+                        _save_dl_tasks()
+                        _wg_log('[RENAME] 直接下载完成时重命名: %s -> %s' % (actual_filename, expected_filename))
+            except Exception as _rename_err:
+                _wg_log('[RENAME] 直接下载重命名失败: %s' % str(_rename_err))
             _add_to_history(_dl)
             try:
                 _pushplus('下载完成: ' + _dl.get('filename', ''),
@@ -1714,6 +1728,20 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                 _dl["completed_at"] = datetime.now().isoformat()
                 _dl.pop("status_detail", None)
                 _save_dl_tasks()
+                # 检查文件名是否被用户改过
+                try:
+                    actual_filename = os.path.basename(output_path)
+                    expected_filename = _dl.get('filename', '')
+                    if expected_filename and actual_filename != expected_filename:
+                        new_path = os.path.join(os.path.dirname(output_path), expected_filename)
+                        if os.path.exists(output_path) and not os.path.exists(new_path):
+                            os.rename(output_path, new_path)
+                            output_path = new_path
+                            _dl['output_path'] = new_path
+                            _save_dl_tasks()
+                            _wg_log('[RENAME] watchdog完成时重命名: %s -> %s' % (actual_filename, expected_filename))
+                except Exception as _rename_err:
+                    _wg_log('[RENAME] watchdog重命名失败: %s' % str(_rename_err))
                 _add_to_history(_dl)
                 try:
                     _pushplus("下载完成: " + _dl.get("filename", ""), "<p>文件: " + _dl.get("filename", "") + "</p><p>大小: " + str(round(_fsize/1048576, 1)) + " MB</p>")
@@ -1920,6 +1948,20 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             dl2.pop('total_segments', None)
             dl2.pop('downloaded_segments', None)
             dl2.pop('_speed_sample', None)  # clean up speed tracking
+            # 检查文件名是否被用户改过，如果改了就重命名文件
+            try:
+                actual_filename = os.path.basename(output_path)
+                expected_filename = dl2.get('filename', '')
+                if expected_filename and actual_filename != expected_filename:
+                    new_path = os.path.join(os.path.dirname(output_path), expected_filename)
+                    if os.path.exists(output_path) and not os.path.exists(new_path):
+                        os.rename(output_path, new_path)
+                        output_path = new_path
+                        dl2['output_path'] = new_path
+                        _save_dl_tasks()
+                        _wg_log('[RENAME] 文件重命名: %s -> %s' % (actual_filename, expected_filename))
+            except Exception as _rename_err:
+                _wg_log('[RENAME] 重命名失败: %s' % str(_rename_err))
             # 验证视频可播放性
             if not _validate_mp4(output_path):
                 dl2['status'] = 'failed'
@@ -2341,10 +2383,13 @@ def _handle_download_post(handler, data):
                 handler.send_json({'error': str(e)}, 500)
                 return True
         else:
-            # 还没下载完，只改计划文件名
+            # 还没下载完，改计划文件名和output_path
             with _download_lock:
                 if dl_id in _downloads:
                     _downloads[dl_id]['filename'] = new_name
+                    # 同时更新output_path，确保下载完成后文件名正确
+                    old_folder = _downloads[dl_id].get('folder', '/data/share/视频')
+                    _downloads[dl_id]['output_path'] = os.path.join(old_folder, new_name)
         # 更新历史记录
         try:
             history = _load_dl_history()
