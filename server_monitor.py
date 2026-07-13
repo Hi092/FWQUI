@@ -1655,8 +1655,22 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                         _last_m3u8_size = cur_size
                 except Exception:
                     pass
-            # 防止假死: 无进度超过5分钟就kill
-            if now - last_progress_time > 300:
+            # 防止假死: 无进度超过5分钟就kill（优化阶段用文件大小判断，超时15分钟）
+            _is_optimizing = _downloads[dl_id].get('status_detail', '').startswith('正在优化') if dl_id in _downloads else False
+            if _is_optimizing:
+                # 优化阶段：文件大小15分钟没变化才kill
+                if now - last_progress_time > 900:
+                    try:
+                        cur_sz = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                    except Exception:
+                        cur_sz = 0
+                    if cur_sz == _last_m3u8_size:
+                        _wg_log('ffmpeg optimize stuck for 900s, killing %s' % dl_id)
+                        _kill_ffmpeg(dl_id)
+                        raise Exception('ffmpeg优化阶段卡住超过15分钟')
+                    else:
+                        last_progress_time = now  # 文件还在增长，重置计时
+            elif now - last_progress_time > 300:
                 _wg_log('ffmpeg no progress for 300s, killing %s' % dl_id)
                 _kill_ffmpeg(dl_id)
                 raise Exception('ffmpeg无进度超过5分钟')
