@@ -1394,7 +1394,7 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
     try:
         subprocess.run(
             ['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
-             '-c', 'copy', output_path],
+             '-c', 'copy', '-movflags', '+faststart', output_path],
             timeout=3600, check=True,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -2099,7 +2099,7 @@ def _start_download(url, folder='/data/share/视频', filename='', referer=''):
         'progress': 0,
         'downloaded_bytes': 0,
         'created_at': datetime.now().isoformat(),
-        'is_m3u8': url.endswith('.m3u8'),
+        'is_m3u8': urlparse(url).path.endswith('.m3u8'),
         'referer': referer
     }
     with _download_lock:
@@ -2285,7 +2285,7 @@ def _handle_download_post(handler, data):
                 dl = _downloads[dl_id]
                 dl['status'] = 'queued'
                 dl.pop('_speed_sample', None)
-                is_m3u8 = dl.get('is_m3u8') or dl.get('url', '').endswith('.m3u8')
+                is_m3u8 = dl.get('is_m3u8') or urlparse(dl.get('url', '')).path.endswith('.m3u8')
                 if is_m3u8:
                     # m3u8 不支持断点续传，ffmpeg -y 会覆盖，必须重置
                     dl['_resumed'] = True
