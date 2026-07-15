@@ -1,24 +1,22 @@
 {
-  "dl_1783937281773_0": {
-    "id": "dl_1783937281773_0",
-    "url": "https://hn.bfvvs.com/play/eXDrM1ve/index.m3u8",
+  "dl_1784101048397_1": {
+    "id": "dl_1784101048397_1",
+    "url": "https://pcdn-qn-new.samtory.cn/50c5dbf255a571f1a35d4531959d0402/48916e3e836a4cd5a21f2eec48f607a8-ee163c10f3161732e1fe794278d14c40-LD.mp4?auth_key=1784108425-79025a2df82960751de2742a94d52459-0-d754345fb1c1481488614cddb85f5dde&clientType=android_rrsp_xb_TFTJ&clientVersion=10.10.2&parseUsage=PLAY_NEW&uid=0&rk=c345fb89dd65471ab8c0eda646eacca8&hevc=true&seasonId=57590&currentQuality=SD",
     "folder": "/data/share/电影",
-    "filename": "功夫女足.mp4",
+    "filename": "群体.mp4",
     "status": "completed",
     "progress": 100,
-    "downloaded_bytes": 1442596887,
-    "created_at": "2026-07-13T18:08:01.773132",
-    "is_m3u8": true,
+    "downloaded_bytes": 360694038,
+    "created_at": "2026-07-15T15:37:28.397720",
+    "is_m3u8": false,
     "referer": "",
     "error": "",
-    "started_at": "2026-07-13T18:08:01.792077",
-    "speed_mbps": 0.47,
-    "eta_sec": 2609,
-    "output_path": "/data/share/电影/index.mp4",
-    "total_segments": 6073,
-    "total_bytes": 3109568011,
-    "downloaded_segments": 6048,
-    "size_mb": 1375.8,
-    "completed_at": "2026-07-13T19:07:20.119955"
+    "started_at": "2026-07-15T15:37:28.412815",
+    "output_path": "/data/share/电影/群体.mp4",
+    "speed_mbps": 3.5,
+    "eta_sec": 0,
+    "total_bytes": 360694038,
+    "size_mb": 344.0,
+    "completed_at": "2026-07-15T15:39:11.341516"
   }
 }

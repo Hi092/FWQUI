@@ -953,6 +953,20 @@ def _compute_speed_eta(dl, now_ts):
         remaining = max(0, total_secs - out_secs)
         if dl['speed_mbps'] > 0 and cur_bytes > 0:
             dl['eta_sec'] = int(remaining / (out_secs / elapsed)) if out_secs > 0 else 0
+        elif out_secs > 0 and elapsed > 0:
+            # PNG strip mode: output_path不存在，用分片进度估算ETA
+            seg_speed = out_secs / elapsed  # 分片/秒
+            dl['eta_sec'] = int(remaining / seg_speed) if seg_speed > 0 else int(remaining)
+            # 用临时目录大小估算已下载字节数和速度
+            _tmp_dir = '/data/share/.tmp_segments/m3u8_' + dl.get('id', '')
+            if os.path.isdir(_tmp_dir):
+                try:
+                    _tmp_bytes = sum(os.path.getsize(os.path.join(_tmp_dir, f)) for f in os.listdir(_tmp_dir) if os.path.isfile(os.path.join(_tmp_dir, f)))
+                    dl['downloaded_bytes'] = _tmp_bytes
+                    if elapsed > 1:
+                        dl['speed_mbps'] = round(_tmp_bytes / elapsed / 1048576, 2)
+                except Exception:
+                    pass
         else:
             dl['eta_sec'] = int(remaining)
     else:
@@ -1049,7 +1063,7 @@ def _run_download(dl_id):
         _save_dl_tasks()
     except Exception:
         pass
-    is_m3u8 = urlparse(url).path.endswith('.m3u8')
+    is_m3u8 = '.m3u8' in url.lower()
     try:
         if is_m3u8:
             _download_m3u8(dl, url, output_path, dl.get('referer', ''))
@@ -1099,16 +1113,41 @@ def _run_download(dl_id):
                             _started = _dl.get('_file_size_at_start', 0)
                             _fsize = os.path.getsize(_out)
                             if _fsize > _started:
-                                _dl['status'] = 'completed'
-                                _dl['progress'] = 100
-                                _dl['downloaded_bytes'] = _fsize
-                                _dl['size_mb'] = round(_fsize / 1048576, 1)
-                                _dl['completed_at'] = datetime.now().isoformat()
-                                _dl.pop('status_detail', None)
-                                _dl.pop('total_segments', None)
-                                _dl.pop('downloaded_segments', None)
-                                _save_dl_tasks()
-                                _add_to_history(_dl)
+                                # 检查下载进程返回码：非0说明异常退出，不标completed
+                                _proc_ok = True
+                                _direct_proc = _direct_procs.get(dl_id)
+                                if _direct_proc:
+                                    _rc = _direct_proc.poll()
+                                    if _rc is not None and _rc != 0:
+                                        _proc_ok = False
+                                        _dl['status'] = 'failed'
+                                        _dl['error'] = '下载进程异常退出 code=' + str(_rc)
+                                        _dl['completed_at'] = datetime.now().isoformat()
+                                        _save_dl_tasks()
+                                        _wg_log('[FINALLY] 进程异常退出 code=%s, 不标completed' % _rc)
+                                if _proc_ok:
+                                    _dl['status'] = 'completed'
+                                    _dl['progress'] = 100
+                                    _dl['downloaded_bytes'] = _fsize
+                                    _dl['size_mb'] = round(_fsize / 1048576, 1)
+                                    _dl['completed_at'] = datetime.now().isoformat()
+                                    _dl.pop('status_detail', None)
+                                    _dl.pop('total_segments', None)
+                                    _dl.pop('downloaded_segments', None)
+                                    _save_dl_tasks()
+                                    _add_to_history(_dl)
+                                    _wg_log('[FINALLY] 标记完成 size=%dMB' % round(_fsize/1048576))
+                                    # 检查文件名是否被用户改过
+                                    try:
+                                        _afn = os.path.basename(_out)
+                                        _efn = _dl.get('filename', '')
+                                        if _efn and _afn != _efn:
+                                            _newp = os.path.join(os.path.dirname(_out), _efn)
+                                            if os.path.exists(_out) and not os.path.exists(_newp):
+                                                os.rename(_out, _newp)
+                                                _wg_log('[RENAME] watchdog完成时重命名: %s -> %s' % (_afn, _efn))
+                                    except Exception as _re:
+                                        _wg_log('[RENAME] 重命名失败: %s' % str(_re))
         except Exception:
             pass
         with _download_lock:
@@ -1124,7 +1163,19 @@ def _download_direct(dl, url, output_path):
     if os.path.exists(tmp_path):
         existing_bytes = os.path.getsize(tmp_path)
     elif os.path.exists(output_path):
-        existing_bytes = os.path.getsize(output_path)
+        # 如果已有文件但MP4损坏，删掉重新下载
+        ext = os.path.splitext(output_path)[1].lower()
+        if ext in ('.mp4', '.mkv', '.avi', '.mov', '.webm', '.m4v'):
+            if not _validate_mp4(output_path):
+                try:
+                    os.remove(output_path)
+                except Exception:
+                    pass
+                existing_bytes = 0
+            else:
+                existing_bytes = os.path.getsize(output_path)
+        else:
+            existing_bytes = os.path.getsize(output_path)
     # 获取远程文件总大小（HEAD 请求）
     try:
         head_result = subprocess.run(
@@ -1150,13 +1201,16 @@ def _download_direct(dl, url, output_path):
     
     if use_aria2 and existing_bytes == 0:
         # aria2c 多线程并发下载（默认 5 线程）
+        _ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
         aria2_cmd = ['systemd-run', '--wait', '--pipe', '--collect', '-p', 'MemoryMax=300M',
                      'aria2c', '-x', '5', '-s', '5', '--connect-timeout=30',
-                     '--timeout=600', '--summary-interval=1', '-o', output_path, url]
+                     '--timeout=600', '--summary-interval=1',
+                     '--header=User-Agent: ' + _ua, '--header=Accept: */*',
+                     '-o', output_path, url]
         proc = subprocess.Popen(aria2_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
         using_aria2 = True
     else:
-        cmd = "curl -L --compressed --connect-timeout 30 --max-time 7200 -o '" + output_path + "' --progress-bar"
+        cmd = "curl -L --compressed --connect-timeout 30 --max-time 7200 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' -o '" + output_path + "' --progress-bar"
         if existing_bytes > 0:
             cmd += " -C -"
         cmd += " '" + url + "'"
@@ -1224,6 +1278,12 @@ def _download_direct(dl, url, output_path):
     proc.wait()
     _direct_procs.pop(dl_id, None)
     if proc.returncode == 0:
+        # 读取最新的output_path（用户可能在下载中改名了）
+        with _download_lock:
+            if dl_id in _downloads:
+                _synced = _downloads[dl_id].get('output_path', '')
+                if _synced:
+                    output_path = _synced
         size = os.path.getsize(output_path) if os.path.exists(output_path) else 0
         # 补上最后一次增量
         if size > last_file_size:
@@ -1240,28 +1300,156 @@ def _download_direct(dl, url, output_path):
         _add_to_history(dl2)
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
-        # 验证视频可播放性
+        # 验证视频可播放性（再次同步output_path）
+        with _download_lock:
+            if dl_id in _downloads:
+                _synced2 = _downloads[dl_id].get('output_path', '')
+                if _synced2:
+                    output_path = _synced2
         if not _validate_mp4(output_path):
+            # aria2c下完但文件损坏 → 删掉重试，换curl单线程下
+            if using_aria2:
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except Exception:
+                    pass
+                # 换curl重试（去掉--compressed，避免解压损坏二进制）
+                retry_cmd = "curl -L --connect-timeout 30 --max-time 7200 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' -o '" + output_path + "' --progress-bar '" + url + "'"
+                retry_proc = subprocess.Popen(retry_cmd + " 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
+                _direct_procs[dl_id] = retry_proc
+                for rline in retry_proc.stdout:
+                    rline = rline.strip()
+                    if '%' in rline:
+                        try:
+                            pct_str = rline.split('%')[0].strip().split()[-1]
+                            pct = float(pct_str)
+                            with _download_lock:
+                                if dl_id in _downloads:
+                                    _downloads[dl_id]['progress'] = min(pct, 99.9)
+                        except Exception:
+                            pass
+                retry_proc.wait()
+                _direct_procs.pop(dl_id, None)
+                if retry_proc.returncode == 0:
+                    rsize = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                    if rsize > 0 and _validate_mp4(output_path):
+                        # curl重试成功
+                        with _download_lock:
+                            if dl_id in _downloads:
+                                dl2 = _downloads[dl_id]
+                                dl2['status'] = 'completed'
+                                dl2['progress'] = 100
+                                dl2['downloaded_bytes'] = rsize
+                                dl2['size_mb'] = round(rsize / 1048576, 1)
+                                dl2['completed_at'] = datetime.now().isoformat()
+                        _save_dl_tasks()
+                        _add_to_history(dl2)
+                        try:
+                            _pushplus('下载完成(重试): ' + dl2.get('filename', ''), '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
+                        except Exception:
+                            pass
+                        return
+            # 最终失败
             with _download_lock:
                 if dl_id in _downloads:
                     _downloads[dl_id]['status'] = 'failed'
                     _downloads[dl_id]['error'] = '视频文件损坏'
-        try:
-            _pushplus('下载完成: ' + dl2.get('filename', ''), '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
-        except Exception:
-            pass
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
+        else:
+            try:
+                _pushplus('下载完成: ' + dl2.get('filename', ''), '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
+            except Exception:
+                pass
     else:
-        raise Exception('curl 返回码 ' + str(proc.returncode))
+        # 下载失败：如果是aria2c，fallback到curl重试
+        if using_aria2:
+            _wg_log('[DL] aria2c失败(rc=%d)，切换curl重试' % proc.returncode)
+            with _download_lock:
+                if dl_id in _downloads:
+                    _downloads[dl_id]['status_detail'] = 'aria2c失败，切换curl重试...'
+            if os.path.exists(output_path):
+                try: os.remove(output_path)
+                except Exception: pass
+            retry_cmd = "curl -L --connect-timeout 30 --max-time 7200 -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' -o '" + output_path + "' --progress-bar '" + url + "'"
+            retry_proc = subprocess.Popen(retry_cmd + " 2>&1", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, universal_newlines=True)
+            _direct_procs[dl_id] = retry_proc
+            for rline in retry_proc.stdout:
+                rline = rline.strip()
+                if '%' in rline:
+                    try:
+                        pct_str = rline.split('%')[0].strip().split()[-1]
+                        pct = float(pct_str)
+                        with _download_lock:
+                            if dl_id in _downloads:
+                                _downloads[dl_id]['progress'] = min(pct, 99.9)
+                    except Exception:
+                        pass
+            retry_proc.wait()
+            _direct_procs.pop(dl_id, None)
+            if retry_proc.returncode == 0:
+                rsize = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+                if rsize > 0:
+                    with _download_lock:
+                        if dl_id in _downloads:
+                            dl2 = _downloads[dl_id]
+                            dl2['status'] = 'completed'
+                            dl2['progress'] = 100
+                            dl2['downloaded_bytes'] = rsize
+                            dl2['size_mb'] = round(rsize / 1048576, 1)
+                            dl2['completed_at'] = datetime.now().isoformat()
+                    _save_dl_tasks()
+                    _add_to_history(dl2)
+                    try:
+                        _pushplus('下载完成(重试): ' + dl2.get('filename', ''), '<p>文件: ' + dl2.get('filename', '') + '</p><p>大小: ' + str(dl2.get('size_mb', 0)) + ' MB</p>')
+                    except Exception:
+                        pass
+                    return
+            # curl也失败了，才真正raise
+            raise Exception('下载返回码 aria2c:%d curl:%d' % (proc.returncode, retry_proc.returncode))
+        raise Exception('下载返回码 ' + str(proc.returncode))
 
 def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
     """处理PNG伪装的m3u8分片：跳过PNG头部提取真实视频数据"""
     global _dl_traffic_bytes
     dl_id = dl['id']
     
+    # 注册dummy进程防止watchdog误标完成（分段下载没有ffmpeg进程）
+    class _DummyProc:
+        def __init__(self):
+            import os as _os
+            self.pid = _os.getpid()
+            self.returncode = None
+        def poll(self):
+            return None
+        def kill(self):
+            self.returncode = -9
+        def wait(self):
+            pass
+    _dummy = _DummyProc()
+    with _download_lock:
+        _ffmpeg_procs[dl_id] = (_dummy, 'png-strip')
+    
+    try:
+        return _download_m3u8_with_png_strip_inner(dl, m3u8_url, output_path, referer)
+    finally:
+        with _download_lock:
+            if dl_id in _ffmpeg_procs:
+                del _ffmpeg_procs[dl_id]
+
+def _download_m3u8_with_png_strip_inner(dl, m3u8_url, output_path, referer=''):
+    """内部实现：处理PNG伪装的m3u8分片"""
+    global _dl_traffic_bytes
+    dl_id = dl['id']
+    
     # 下载m3u8内容
     m3u8_content = subprocess.check_output(
         ['curl', '-sL', '--max-time', '30'] +
-        (['-H', 'Referer: ' + referer] if referer else []) +
+        (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
         [m3u8_url],
         timeout=35, stderr=subprocess.DEVNULL
     ).decode('utf-8', errors='replace')
@@ -1281,7 +1469,7 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
         m3u8_url = best
         m3u8_content = subprocess.check_output(
             ['curl', '-sL', '--max-time', '30'] +
-            (['-H', 'Referer: ' + referer] if referer else []) +
+            (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
             [m3u8_url],
             timeout=35, stderr=subprocess.DEVNULL
         ).decode('utf-8', errors='replace')
@@ -1301,7 +1489,7 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
             _downloads[dl_id]['total_segments'] = total_segments
     
     # 临时目录
-    tmp_dir = '/tmp/m3u8_segments_' + dl_id
+    tmp_dir = '/data/share/.tmp_segments/m3u8_' + dl_id
     os.makedirs(tmp_dir, exist_ok=True)
     
     # 下载并提取分片
@@ -1332,7 +1520,7 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
         try:
             subprocess.run(
                 ['curl', '-sL', '--max-time', '30', '--connect-timeout', '10'] +
-                (['-H', 'Referer: ' + referer] if referer else []) +
+                (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
                 ['-o', raw_file, seg_url],
                 timeout=35, check=True
             )
@@ -1345,12 +1533,19 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
             with open(raw_file, 'rb') as f:
                 header = f.read(512)
             
-            # 查找FFmpeg标记
-            ffmpeg_pos = header.find(b'FFmpeg')
-            if ffmpeg_pos > 0:
+            # 查找TS同步字节0x47（188字节间隔验证）
+            _ts_pos = -1
+            for _p in range(8, min(len(header), 1000)):
+                if header[_p] == 0x47 and _p + 188 < len(header) and header[_p + 188] == 0x47:
+                    _ts_pos = _p
+                    break
+            if _ts_pos < 0:
+                # 回退：用FFmpeg标记
+                _ts_pos = header.find(b'FFmpeg')
+            if _ts_pos > 0:
                 # 跳过PNG头部，提取真实TS数据
                 with open(raw_file, 'rb') as fin:
-                    fin.seek(ffmpeg_pos)
+                    fin.seek(_ts_pos)
                     data = fin.read()
                 with open(clean_file, 'wb') as fout:
                     fout.write(data)
@@ -1390,11 +1585,15 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
         if dl_id in _downloads:
             _downloads[dl_id]['status_detail'] = '合并分片...'
             _downloads[dl_id]['progress'] = 96
+            # 读取最新的output_path（用户可能在下载中改名了）
+            _updated_path = _downloads[dl_id].get('output_path', '')
+            if _updated_path:
+                output_path = _updated_path
     
     try:
         subprocess.run(
             ['ffmpeg', '-y', '-f', 'concat', '-safe', '0', '-i', concat_file,
-             '-c', 'copy', '-movflags', '+faststart', output_path],
+             '-c', 'copy', output_path],
             timeout=3600, check=True,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
@@ -1409,6 +1608,12 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
         pass
     
     # 标记完成
+    # 读取最新的output_path（用户可能在下载中改名了）
+    with _download_lock:
+        if dl_id in _downloads:
+            _updated_path = _downloads[dl_id].get('output_path', '')
+            if _updated_path:
+                output_path = _updated_path
     fsize = os.path.getsize(output_path) if os.path.exists(output_path) else 0
     with _download_lock:
         if dl_id in _downloads and _downloads[dl_id].get('status') == 'downloading':
@@ -1420,20 +1625,18 @@ def _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer=''):
             _dl['completed_at'] = datetime.now().isoformat()
             _dl.pop('status_detail', None)
             _save_dl_tasks()
-            # 检查文件名是否被用户改过
+            # 检查文件名是否被用户改过（rename API更新了_dl但磁盘文件还是旧名）
             try:
-                actual_filename = os.path.basename(output_path)
-                expected_filename = _dl.get('filename', '')
-                if expected_filename and actual_filename != expected_filename:
-                    new_path = os.path.join(os.path.dirname(output_path), expected_filename)
-                    if os.path.exists(output_path) and not os.path.exists(new_path):
-                        os.rename(output_path, new_path)
-                        output_path = new_path
-                        _dl['output_path'] = new_path
-                        _save_dl_tasks()
-                        _wg_log('[RENAME] 直接下载完成时重命名: %s -> %s' % (actual_filename, expected_filename))
-            except Exception as _rename_err:
-                _wg_log('[RENAME] 直接下载重命名失败: %s' % str(_rename_err))
+                _afn = os.path.basename(output_path)
+                _efn = _dl.get('filename', '')
+                if _efn and _afn != _efn:
+                    _newp = os.path.join(os.path.dirname(output_path), _efn)
+                    if os.path.exists(output_path) and not os.path.exists(_newp):
+                        os.rename(output_path, _newp)
+                        output_path = _newp
+                        _wg_log('[RENAME] png-strip完成时重命名: %s -> %s' % (_afn, _efn))
+            except Exception as _re:
+                _wg_log('[RENAME] 重命名失败: %s' % str(_re))
             _add_to_history(_dl)
             try:
                 _pushplus('下载完成: ' + _dl.get('filename', ''),
@@ -1445,16 +1648,45 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
     # 记录开始时的文件大小，用于watchdog判断
     dl['_file_size_at_start'] = os.path.getsize(output_path) if os.path.exists(output_path) else 0
     
+    dl_id = dl['id']
     # 检测是否PNG伪装的m3u8（分片返回假PNG图片）
     try:
         _test_m3u8 = subprocess.check_output(
             ['curl', '-sL', '--max-time', '15'] +
-            (['-H', 'Referer: ' + referer] if referer else []) +
+            (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
             [m3u8_url],
             timeout=20, stderr=subprocess.DEVNULL
         ).decode('utf-8', errors='replace')
         _test_segments = [l.strip() for l in _test_m3u8.split(chr(10))
                          if l.strip() and not l.startswith('#')]
+        # 如果是master playlist，先解析子播放列表
+        if '#EXT-X-STREAM-INF' in _test_m3u8:
+            _sub_url = None
+            for _li in _test_m3u8.split(chr(10)):
+                _li = _li.strip()
+                if _li and not _li.startswith('#'):
+                    _sub_url = _li
+                    break
+            if _sub_url:
+                if not _sub_url.startswith('http'):
+                    _base = m3u8_url.rsplit('/', 1)[0]
+                    if _sub_url.startswith('/'):
+                        _pu = urlparse(m3u8_url)
+                        _sub_url = _pu.scheme + '://' + _pu.netloc + _sub_url
+                    else:
+                        _sub_url = _base + '/' + _sub_url
+                try:
+                    _sub_m3u8 = subprocess.check_output(
+                        ['curl', '-sL', '--max-time', '15'] +
+                        (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0'] if referer else ['-A', 'Mozilla/5.0']) +
+                        [_sub_url],
+                        timeout=20, stderr=subprocess.DEVNULL
+                    ).decode('utf-8', errors='replace')
+                    _test_segments = [l.strip() for l in _sub_m3u8.split(chr(10))
+                                     if l.strip() and not l.startswith('#')]
+                    _wg_log('[PNG-M3U8] master playlist解析完成，子列表 %d 个分片' % len(_test_segments))
+                except Exception as _se:
+                    _wg_log('[PNG-M3U8] 子列表解析失败: %s' % str(_se))
         if _test_segments:
             # 下载第一个分片检测
             _test_url = _test_segments[0]
@@ -1489,11 +1721,10 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
 
     """用 ffmpeg 直接下载 m3u8，比逐个 curl ts 分片快 10 倍"""
     global _dl_traffic_bytes
-    dl_id = dl['id']
     # 先解析 master playlist 拿到最高码率子列表
     m3u8_content = subprocess.check_output(
         ['curl', '-sL', '--max-time', '30'] +
-        (['-H', 'Referer: ' + referer] if referer else []) +
+        (['-H', 'Referer: ' + referer, '-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-A', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
         [m3u8_url],
         timeout=35, stderr=subprocess.DEVNULL
     ).decode('utf-8', errors='replace')
@@ -1517,7 +1748,7 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
     try:
         probe = subprocess.check_output(
             ['ffprobe', '-v', 'quiet'] +
-            (['-headers', 'Referer: ' + referer] if referer else []) +
+            (['-headers', 'Referer: ' + referer + '\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-headers', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
             ['-show_entries', 'format=duration',
              '-of', 'csv=p=0', m3u8_url],
             timeout=30, stderr=subprocess.DEVNULL
@@ -1549,7 +1780,7 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
     _ffmpeg_err_log = '/opt/monitor/ffmpeg_error.log'
     proc = subprocess.Popen(
         ['ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
-        (['-headers', 'Referer: ' + referer] if referer else []) +
+        (['-headers', 'Referer: ' + referer + '\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-headers', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
         ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
          '-allowed_extensions', 'ALL', '-allowed_segment_extensions', 'ALL', '-i', m3u8_url] + enc_args +
         ['-loglevel', 'error', output_path],
@@ -1620,7 +1851,8 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                             if pct != last_pct:
                                 last_pct = pct
                                 last_pct_change_time = time.time()
-                                last_progress_time = time.time()
+                            # 只要ffmpeg在产出out_time就更新，避免duration_secs=0时被误杀
+                            last_progress_time = time.time()
                             if progress_counter % 10 == 0:
                                 with _download_lock:
                                     if dl_id in _downloads:
@@ -1730,18 +1962,43 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                 _save_dl_tasks()
                 # 检查文件名是否被用户改过
                 try:
-                    actual_filename = os.path.basename(output_path)
-                    expected_filename = _dl.get('filename', '')
-                    if expected_filename and actual_filename != expected_filename:
-                        new_path = os.path.join(os.path.dirname(output_path), expected_filename)
-                        if os.path.exists(output_path) and not os.path.exists(new_path):
-                            os.rename(output_path, new_path)
-                            output_path = new_path
-                            _dl['output_path'] = new_path
-                            _save_dl_tasks()
-                            _wg_log('[RENAME] watchdog完成时重命名: %s -> %s' % (actual_filename, expected_filename))
-                except Exception as _rename_err:
-                    _wg_log('[RENAME] watchdog重命名失败: %s' % str(_rename_err))
+                    _afn = os.path.basename(output_path)
+                    _efn = _dl.get('filename', '')
+                    if _efn and _afn != _efn:
+                        _newp = os.path.join(os.path.dirname(output_path), _efn)
+                        if os.path.exists(output_path) and not os.path.exists(_newp):
+                            os.rename(output_path, _newp)
+                            output_path = _newp
+                            _wg_log('[RENAME] m3u8完成时重命名: %s -> %s' % (_afn, _efn))
+                except Exception as _re:
+                    _wg_log('[RENAME] 重命名失败: %s' % str(_re))
+                # m3u8下载完成后添加faststart
+                try:
+                    if output_path.endswith('.mp4') and _fsize > 1048576:
+                        tmp_fast = output_path + '.faststart'
+                        _wg_log('[DL-FASTSTART] processing %s' % output_path)
+                        _dl['status_detail'] = '正在优化播放...'
+                        _save_dl_tasks()
+                        r2 = subprocess.run([
+                            'ffmpeg', '-y', '-i', output_path,
+                            '-c', 'copy', '-movflags', '+faststart',
+                            '-threads', '1', '-max_muxing_queue_size', '1024',
+                            tmp_fast
+                        ], capture_output=True, text=True, timeout=600)
+                        if r2.returncode == 0 and os.path.exists(tmp_fast) and os.path.getsize(tmp_fast) > 1048576:
+                            os.remove(output_path)
+                            os.rename(tmp_fast, output_path)
+                            _wg_log('[DL-FASTSTART] success')
+                        else:
+                            _wg_log('[DL-FASTSTART] failed: rc=%s' % str(r2.returncode))
+                            if os.path.exists(tmp_fast):
+                                os.remove(tmp_fast)
+                        _dl.pop('status_detail', None)
+                        _save_dl_tasks()
+                except Exception as _fe:
+                    _wg_log('[DL-FASTSTART] error: %s' % str(_fe))
+                    _dl.pop('status_detail', None)
+                    _save_dl_tasks()
                 _add_to_history(_dl)
                 try:
                     _pushplus("下载完成: " + _dl.get("filename", ""), "<p>文件: " + _dl.get("filename", "") + "</p><p>大小: " + str(round(_fsize/1048576, 1)) + " MB</p>")
@@ -1785,7 +2042,7 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             enc_args = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-c:a', 'copy']
             proc = subprocess.Popen(
                 ['ffmpeg', '-y', '-progress', 'pipe:1', '-nostats'] +
-                (['-headers', 'Referer: ' + referer] if referer else []) +
+                (['-headers', 'Referer: ' + referer + '\r\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'] if referer else ['-headers', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36']) +
                 ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '5',
                  '-allowed_extensions', 'ALL', '-allowed_segment_extensions', 'ALL', '-i', m3u8_url] + enc_args +
                 ['-loglevel', 'error', output_path],
@@ -1851,13 +2108,14 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
                                         if pct != last_pct:
                                             last_pct = pct
                                             last_pct_change_time = time.time()
-                                            last_progress_time = time.time()
                                         progress_counter += 1
-                                        if progress_counter % 10 == 0:
-                                            with _download_lock:
-                                                if dl_id in _downloads:
-                                                    _downloads[dl_id]['progress'] = pct
-                                                    _downloads[dl_id]['downloaded_segments'] = int(out_secs)
+                                    # 只要ffmpeg在产出out_time就更新，避免duration_secs=0时被误杀
+                                    last_progress_time = time.time()
+                                    if progress_counter % 10 == 0:
+                                        with _download_lock:
+                                            if dl_id in _downloads:
+                                                _downloads[dl_id]['progress'] = pct
+                                                _downloads[dl_id]['downloaded_segments'] = int(out_secs)
                                 except Exception:
                                     pass
                     now = time.time()
@@ -1929,6 +2187,18 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
         clean_err = '\n'.join(line for line in stderr_out.split('\n')
                               if not line.startswith('Running as unit:')
                               and not line.startswith('Finished with result:')).strip()
+        # ffmpeg失败：检查是否PNG伪装导致的，如果是则自动切换PNG模式重试
+        if 'png_pipe' in stderr_out or 'png' in stderr_out.lower():
+            _wg_log('[M3U8] ffmpeg遇到PNG分片，自动切换PNG模式重试')
+            with _download_lock:
+                if dl_id in _downloads:
+                    _downloads[dl_id]['status_detail'] = 'PNG伪装模式重试中...'
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
+            return _download_m3u8_with_png_strip(dl, m3u8_url, output_path, referer)
         raise Exception('ffmpeg 失败: ' + (clean_err[:500] if clean_err else '返回码 ' + str(proc.returncode)))
     
     # 文件已由 ffmpeg 直接写入最终路径
@@ -1948,24 +2218,36 @@ def _download_m3u8(dl, m3u8_url, output_path, referer=''):
             dl2.pop('total_segments', None)
             dl2.pop('downloaded_segments', None)
             dl2.pop('_speed_sample', None)  # clean up speed tracking
-            # 检查文件名是否被用户改过，如果改了就重命名文件
+            # 检查文件名是否被用户改过
             try:
-                actual_filename = os.path.basename(output_path)
-                expected_filename = dl2.get('filename', '')
-                if expected_filename and actual_filename != expected_filename:
-                    new_path = os.path.join(os.path.dirname(output_path), expected_filename)
-                    if os.path.exists(output_path) and not os.path.exists(new_path):
-                        os.rename(output_path, new_path)
-                        output_path = new_path
-                        dl2['output_path'] = new_path
-                        _save_dl_tasks()
-                        _wg_log('[RENAME] 文件重命名: %s -> %s' % (actual_filename, expected_filename))
-            except Exception as _rename_err:
-                _wg_log('[RENAME] 重命名失败: %s' % str(_rename_err))
+                _afn = os.path.basename(output_path)
+                _efn = dl2.get('filename', '')
+                if _efn and _afn != _efn:
+                    _newp = os.path.join(os.path.dirname(output_path), _efn)
+                    if os.path.exists(output_path) and not os.path.exists(_newp):
+                        os.rename(output_path, _newp)
+                        output_path = _newp
+                        _wg_log('[RENAME] 直接下载完成时重命名: %s -> %s' % (_afn, _efn))
+            except Exception as _re:
+                _wg_log('[RENAME] 重命名失败: %s' % str(_re))
+            # 同步output_path：API可能在下载中改了文件名（os.rename on disk）
+            # 此时局部变量output_path指向旧路径已不存在，需要从dict取最新路径
+            try:
+                _synced = dl2.get('output_path', '')
+                if _synced and os.path.exists(_synced):
+                    output_path = _synced
+            except Exception:
+                pass
             # 验证视频可播放性
             if not _validate_mp4(output_path):
                 dl2['status'] = 'failed'
                 dl2['error'] = '视频文件损坏(moov丢失)'
+                # 删除损坏文件，避免重试时跳过
+                try:
+                    if os.path.exists(output_path):
+                        os.remove(output_path)
+                except Exception:
+                    pass
             _add_to_history(dl2)
     
     try:
@@ -2155,7 +2437,7 @@ def _start_download(url, folder='/data/share/视频', filename='', referer=''):
         'progress': 0,
         'downloaded_bytes': 0,
         'created_at': datetime.now().isoformat(),
-        'is_m3u8': urlparse(url).path.endswith('.m3u8'),
+        'is_m3u8': '.m3u8' in url.lower(),
         'referer': referer
     }
     with _download_lock:
@@ -2341,7 +2623,7 @@ def _handle_download_post(handler, data):
                 dl = _downloads[dl_id]
                 dl['status'] = 'queued'
                 dl.pop('_speed_sample', None)
-                is_m3u8 = dl.get('is_m3u8') or urlparse(dl.get('url', '')).path.endswith('.m3u8')
+                is_m3u8 = dl.get('is_m3u8') or '.m3u8' in dl.get('url', '').lower()
                 if is_m3u8:
                     # m3u8 不支持断点续传，ffmpeg -y 会覆盖，必须重置
                     dl['_resumed'] = True
@@ -2387,9 +2669,10 @@ def _handle_download_post(handler, data):
             with _download_lock:
                 if dl_id in _downloads:
                     _downloads[dl_id]['filename'] = new_name
-                    # 同时更新output_path，确保下载完成后文件名正确
-                    old_folder = _downloads[dl_id].get('folder', '/data/share/视频')
-                    _downloads[dl_id]['output_path'] = os.path.join(old_folder, new_name)
+                    old_output = _downloads[dl_id].get('output_path', '')
+                    if old_output:
+                        new_output = os.path.join(os.path.dirname(old_output), new_name)
+                        _downloads[dl_id]['output_path'] = new_output
         # 更新历史记录
         try:
             history = _load_dl_history()
