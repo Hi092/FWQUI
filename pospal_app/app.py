@@ -147,11 +147,11 @@ def get_payment_summary(session, user_id, target_date):
     resp.raise_for_status()
     data = resp.json()
     if not data.get("successed"):
-        return {"cash": 0, "wechat": 0, "meituan": 0, "total": 0}
+        return {"cash": 0, "wechat": 0, "total": 0}
 
     rows = data.get("json", {}).get("list", [])
     if not rows:
-        return {"cash": 0, "wechat": 0, "meituan": 0, "total": 0}
+        return {"cash": 0, "wechat": 0, "total": 0}
 
     row = rows[0]
     return {
@@ -286,10 +286,13 @@ def generate_excel(products, target_date, payment):
     ws.cell(row=r, column=7, value=int(payment["wechat"]))
     ws.cell(row=r + 1, column=6, value="现金：").font = Font(bold=True)
     ws.cell(row=r + 1, column=7, value=int(payment["cash"]))
-    ws.cell(row=r + 2, column=6, value="美团：").font = Font(bold=True)
-    ws.cell(row=r + 2, column=7, value=int(payment.get("meituan", 0)))
-    ws.cell(row=r + 3, column=6, value="合计：").font = Font(bold=True)
-    ws.cell(row=r + 3, column=7, value=int(payment["total"]))
+    offset = 0
+    if int(payment.get("meituan", 0)) > 0:
+        ws.cell(row=r + 2, column=6, value="美团：").font = Font(bold=True)
+        ws.cell(row=r + 2, column=7, value=int(payment.get("meituan", 0)))
+        offset = 1
+    ws.cell(row=r + 2 + offset, column=6, value="合计：").font = Font(bold=True)
+    ws.cell(row=r + 2 + offset, column=7, value=int(payment["total"]))
 
     for col, w in {1: 8, 2: 16, 3: 36, 4: 10, 5: 8, 6: 12, 7: 12, 8: 14}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -342,7 +345,7 @@ def api_report():
     total_sales = sum(p["total"] for p in products)
     total_qty = sum(p["qty"] for p in products)
 
-    member = payment.get("member", 0)
+    member = payment.pop("member", 0)
     expected_all = payment["total"] + member
 
     # 获取每个商品的收款方式
