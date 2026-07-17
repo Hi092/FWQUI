@@ -212,35 +212,35 @@ function renderDashboard(data) {
         '<div class="value">' + (summary ? summary.item_count || 0 : 0) + '</div>' +
         '<div class="label">商品种类</div>' +
       '</div>' +
-      '<div class="stat-card green">' +
-        '<div class="value">&yen;' + (payment ? payment.wechat : 0) + '</div>' +
+      (payment && payment.wechat > 0 ? '<div class="stat-card green">' +
+        '<div class="value">&yen;' + payment.wechat + '</div>' +
         '<div class="label">微信收入</div>' +
-      '</div>' +
-      '<div class="stat-card">' +
-        '<div class="value">&yen;' + (payment ? payment.cash : 0) + '</div>' +
+      '</div>' : '') +
+      (payment && payment.cash > 0 ? '<div class="stat-card">' +
+        '<div class="value">&yen;' + payment.cash + '</div>' +
         '<div class="label">现金收入</div>' +
-      '</div>' +
-      '<div class="stat-card">' +
-        '<div class="value">&yen;' + (payment ? payment.meituan : 0) + '</div>' +
+      '</div>' : '') +
+      (payment && payment.meituan > 0 ? '<div class="stat-card">' +
+        '<div class="value">&yen;' + payment.meituan + '</div>' +
         '<div class="label">美团收入</div>' +
-      '</div>' +
+      '</div>' : '') +
     '</div>' +
 
     '<div class="payment-bar">' +
       '<h3>收入构成</h3>' +
       '<div class="payment-items">' +
-        '<div class="payment-item wechat">' +
-          '<div class="amount">&yen;' + (payment ? payment.wechat : 0) + '</div>' +
+        (payment && payment.wechat > 0 ? '<div class="payment-item wechat">' +
+          '<div class="amount">&yen;' + payment.wechat + '</div>' +
           '<div class="type">微信</div>' +
-        '</div>' +
-        '<div class="payment-item cash">' +
-          '<div class="amount">&yen;' + (payment ? payment.cash : 0) + '</div>' +
+        '</div>' : '') +
+        (payment && payment.cash > 0 ? '<div class="payment-item cash">' +
+          '<div class="amount">&yen;' + payment.cash + '</div>' +
           '<div class="type">现金</div>' +
-        '</div>' +
-        '<div class="payment-item meituan">' +
-          '<div class="amount">&yen;' + (payment ? payment.meituan : 0) + '</div>' +
+        '</div>' : '') +
+        (payment && payment.meituan > 0 ? '<div class="payment-item meituan">' +
+          '<div class="amount">&yen;' + payment.meituan + '</div>' +
           '<div class="type">美团</div>' +
-        '</div>' +
+        '</div>' : '') +
         '<div class="payment-item">' +
           '<div class="amount">&yen;' + (payment ? payment.total : 0) + '</div>' +
           '<div class="type">总额</div>' +

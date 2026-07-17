@@ -346,17 +346,19 @@ def api_report():
     total_sales = sum(p["total"] for p in products)
     total_qty = sum(p["qty"] for p in products)
 
-    member = payment.pop("member", 0)
+    member = payment.get("member", 0)
+    payment_without_member = {k: v for k, v in payment.items() if k != "member"}
     expected_all = payment["total"] + member
 
     # 获取每个商品的收款方式
     cash_product_names = get_cash_products(session, user_id, target_date)
+    def fmt(v):
+        return str(int(v)) if v == int(v) else str(v)
+
     for p in products:
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            def fmt(v):
-                return str(int(v)) if v == int(v) else str(v)
             cash_amt = cp["cash"]
             meituan_amt = cp.get("meituan", 0)
             parts = ["微信"]
@@ -371,7 +373,7 @@ def api_report():
     result = {
         "date": str(target_date),
         "products": products,
-        "payment": payment,
+        "payment": payment_without_member,
         "summary": {
             "total_sales": total_sales,
             "total_qty": total_qty,
@@ -411,14 +413,16 @@ def api_download():
         return jsonify({"error": "该日期无销售数据"}), 400
 
     # 去掉 member 字段，标注收款方式
-    payment.pop("member", 0)
+    member = payment.get("member", 0)
+    payment = {k: v for k, v in payment.items() if k != "member"}
     cash_product_names = get_cash_products(session, user_id, target_date)
+    def fmt(v):
+        return str(int(v)) if v == int(v) else str(v)
+
     for p in products:
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            def fmt(v):
-                return str(int(v)) if v == int(v) else str(v)
             cash_amt = cp["cash"]
             meituan_amt = cp.get("meituan", 0)
             parts = ["微信"]
