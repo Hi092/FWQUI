@@ -1,0 +1,14 @@
+# Cloudflared tunnel 健康检查（每分钟，连续5次失败重启）
+* * * * * root /etc/filebrowser/cf-health-check.sh >/dev/null 2>&1
+
+# FileBrowser SSL 证书自动续期（每天15:01）
+1 15 * * * root /root/.acme.sh/acme.sh --cron --home /root/.acme.sh && pkill filebrowser; sleep 1; nohup /usr/local/bin/filebrowser --config /etc/filebrowser/filebrowser.yml > /dev/null 2>&1 &
+
+# 每天3点清理旧日志
+0 3 * * * root journalctl --vacuum-size=50M
+
+# 服务器监控开机自启
+@reboot root sleep 10 && nohup /usr/local/bin/cloudflared tunnel --url http://127.0.0.1:8088 --metrics localhost:51888 --no-autoupdate --edge-ip-version 4 --retries 10 --proxy-tcp-keepalive 15s --loglevel info > /var/log/cloudflared.log 2>&1 &
+
+# 每周日凌晨3点fstrim网盘镜像
+0 3 * * 0 root /sbin/fstrim -v /data/share >> /var/log/fstrim.log 2>&1

@@ -1,0 +1,1 @@
+EARLYOOM_ARGS="-r 10 -m 10 -s 95 -p --prefer '(python3)' --avoid '(systemd|sshd|agetty)'"

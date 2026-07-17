@@ -1,6 +1,7 @@
 # OneCloud 服务器完整配置文档
 
-> 最后更新: 2026-07-11
+> 最后更新: 2026-07-17
+> 状态: 最新稳定版（经过两套AI优化评估）
 > 设备: OneCloud (迅雷玩客云)
 > SoC: Amlogic Meson8b (S805), ARMv7 Cortex-A5, 4核 1.6GHz
 > 内存: 981MB
