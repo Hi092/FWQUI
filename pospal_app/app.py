@@ -274,9 +274,12 @@ def generate_excel(products, target_date, payment):
         cell.alignment = center
         cell.border = border
 
+    def fmt_num(v):
+        return int(v) if v == int(v) else v
+
     for i, p in enumerate(products, 1):
         row = i + 2
-        for col, val in enumerate([i, target_date.strftime("%Y-%m-%d"), p["name"], p["unit"], p["qty"], p["unit_price"], p["total"], p.get("payment", "")], 1):
+        for col, val in enumerate([i, target_date.strftime("%Y-%m-%d"), p["name"], p["unit"], p["qty"], fmt_num(p["unit_price"]), fmt_num(p["total"]), p.get("payment", "")], 1):
             cell = ws.cell(row=row, column=col, value=val)
             cell.border = border
             cell.alignment = center
@@ -287,10 +290,10 @@ def generate_excel(products, target_date, payment):
         val = payment.get(key, 0)
         if val > 0:
             ws.cell(row=r + offset, column=6, value=f"{label}：").font = Font(bold=True)
-            ws.cell(row=r + offset, column=7, value=val)
+            ws.cell(row=r + offset, column=7, value=fmt_num(val))
             offset += 1
     ws.cell(row=r + offset, column=6, value="合计：").font = Font(bold=True)
-    ws.cell(row=r + offset, column=7, value=payment["total"])
+    ws.cell(row=r + offset, column=7, value=fmt_num(payment["total"]))
 
     for col, w in {1: 8, 2: 16, 3: 36, 4: 10, 5: 8, 6: 12, 7: 12, 8: 14}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
@@ -352,13 +355,15 @@ def api_report():
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            cash_amt = int(cp["cash"])
-            meituan_amt = int(cp.get("meituan", 0))
+            def fmt(v):
+                return str(int(v)) if v == int(v) else str(v)
+            cash_amt = cp["cash"]
+            meituan_amt = cp.get("meituan", 0)
             parts = ["微信"]
             if cash_amt > 0:
-                parts.append(f"现金{cash_amt}")
+                parts.append(f"现金{fmt(cash_amt)}")
             if meituan_amt > 0:
-                parts.append(f"美团{meituan_amt}")
+                parts.append(f"美团{fmt(meituan_amt)}")
             p["payment"] = "/".join(parts)
         else:
             p["payment"] = "微信"
@@ -412,13 +417,15 @@ def api_download():
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            cash_amt = int(cp["cash"])
-            meituan_amt = int(cp.get("meituan", 0))
+            def fmt(v):
+                return str(int(v)) if v == int(v) else str(v)
+            cash_amt = cp["cash"]
+            meituan_amt = cp.get("meituan", 0)
             parts = ["微信"]
             if cash_amt > 0:
-                parts.append(f"现金{cash_amt}")
+                parts.append(f"现金{fmt(cash_amt)}")
             if meituan_amt > 0:
-                parts.append(f"美团{meituan_amt}")
+                parts.append(f"美团{fmt(meituan_amt)}")
             p["payment"] = "/".join(parts)
         else:
             p["payment"] = "微信"
