@@ -262,8 +262,8 @@ function renderDashboard(data) {
         '<td>' + (i + 1) + '</td>' +
         '<td class="name">' + p.name + '</td>' +
         '<td class="num">' + p.qty + ' ' + (p.unit || '') + '</td>' +
-        '<td class="num">' + p.unit_price.toFixed(2) + '</td>' +
-        '<td class="num">' + p.total.toFixed(2) + '</td>' +
+        '<td class="num">' + (p.unit_price % 1 === 0 ? p.unit_price.toFixed(0) : p.unit_price) + '</td>' +
+        '<td class="num">' + (p.total % 1 === 0 ? p.total.toFixed(0) : p.total) + '</td>' +
         '<td>' + (p.payment || '微信') + '</td>' +
       '</tr>';
     }
