@@ -165,7 +165,7 @@ def get_payment_summary(session, user_id, target_date):
 
 # ========================= 商品收款方式查询 =========================
 def get_cash_products(session, user_id, target_date):
-    """从销售单据API获取每个商品的现金/微信金额（按小计分配）"""
+    """从销售单据API获取每个商品的实收金额和收款方式"""
     begin = target_date.strftime("%Y.%m.%d 00:00:00")
     end = target_date.strftime("%Y.%m.%d 23:59:59")
     body = (f"userIds%5B%5D={user_id}&beginTime={begin}&endTime={end}"
@@ -180,38 +180,52 @@ def get_cash_products(session, user_id, target_date):
         resp = session.post(f"{BASE_URL}/Report/LoadTicketsByPage", data=body, timeout=30, headers=headers)
         data = resp.json()
         if not data.get("successed"):
-            return {}
+            return {}, {}
     except:
-        return {}
+        return {}, {}
 
     soup = BeautifulSoup(data.get("contentView", ""), "lxml")
     rows = soup.find_all("tr")
 
     product_payments = {}
+    product_actual_totals = {}
     current_products = []
     current_cash = 0
     current_wechat = 0
     current_meituan = 0
+    current_ticket_actual = 0
 
     for row in rows:
         classes = row.get("class", [])
 
         if row.find("a", class_="btn_showItems"):
             if current_products:
-                ticket_total = sum(sub for _, sub in current_products)
-                for name, subtotal in current_products:
+                # 按每杯实收分配收款方式
+                prod_total = sum(sub for _, sub in current_products)
+                pay_total = current_cash + current_wechat + current_meituan
+                scale = pay_total / prod_total if prod_total > 0 else 1
+                for name, actual in current_products:
                     if name not in product_payments:
                         product_payments[name] = {"cash": 0, "wechat": 0, "meituan": 0}
-                    if ticket_total > 0:
-                        ratio = subtotal / ticket_total
-                        product_payments[name]["cash"] += current_cash * ratio
-                        product_payments[name]["wechat"] += current_wechat * ratio
-                        product_payments[name]["meituan"] += current_meituan * ratio
+                    scaled = actual * scale
+                    if pay_total > 0:
+                        product_payments[name]["cash"] += current_cash * (scaled / pay_total)
+                        product_payments[name]["wechat"] += current_wechat * (scaled / pay_total)
+                        product_payments[name]["meituan"] += current_meituan * (scaled / pay_total)
 
             current_products = []
             current_cash = 0
             current_wechat = 0
             current_meituan = 0
+            current_ticket_actual = 0
+
+            # 读票头的实收金额 td[8]
+            tds = row.find_all("td")
+            if len(tds) > 8:
+                try:
+                    current_ticket_actual = float(tds[8].get_text(strip=True))
+                except:
+                    pass
 
         elif "ticketItemRow" in classes:
             tds = row.find_all("td")
@@ -233,24 +247,29 @@ def get_cash_products(session, user_id, target_date):
                 product_text = tds[1].get_text(strip=True)
                 if "(" in product_text and ")" in product_text:
                     name = product_text.split("(")[0].strip()
+                    # td[4] = 每杯实收金额
                     try:
-                        subtotal = float(tds[4].get_text(strip=True))
+                        actual = float(tds[4].get_text(strip=True))
                     except:
-                        subtotal = 0
-                    current_products.append((name, subtotal))
+                        actual = 0
+                    current_products.append((name, actual))
+                    product_actual_totals[name] = product_actual_totals.get(name, 0) + actual
 
+    # 最后一张票
     if current_products:
-        ticket_total = sum(sub for _, sub in current_products)
-        for name, subtotal in current_products:
+        prod_total = sum(sub for _, sub in current_products)
+        pay_total = current_cash + current_wechat + current_meituan
+        scale = pay_total / prod_total if prod_total > 0 else 1
+        for name, actual in current_products:
             if name not in product_payments:
                 product_payments[name] = {"cash": 0, "wechat": 0, "meituan": 0}
-            if ticket_total > 0:
-                ratio = subtotal / ticket_total
-                product_payments[name]["cash"] += current_cash * ratio
-                product_payments[name]["wechat"] += current_wechat * ratio
-                product_payments[name]["meituan"] += current_meituan * ratio
+            scaled = actual * scale
+            if pay_total > 0:
+                product_payments[name]["cash"] += current_cash * (scaled / pay_total)
+                product_payments[name]["wechat"] += current_wechat * (scaled / pay_total)
+                product_payments[name]["meituan"] += current_meituan * (scaled / pay_total)
 
-    return product_payments
+    return product_payments, product_actual_totals
 
 
 def generate_excel(products, target_date, payment):
@@ -350,10 +369,16 @@ def api_report():
     payment_without_member = {k: v for k, v in payment.items() if k != "member"}
     expected_all = payment["total"] + member
 
-    # 获取每个商品的收款方式
-    cash_product_names = get_cash_products(session, user_id, target_date)
+    # 获取每个商品的收款方式和实收金额
+    cash_product_names, product_actual_totals = get_cash_products(session, user_id, target_date)
     def fmt(v):
         return str(int(v)) if v == int(v) else str(v)
+
+    # 用每个商品的实收金额覆盖原价
+    for p in products:
+        name = p["name"]
+        if product_actual_totals and name in product_actual_totals:
+            p["total"] = round(product_actual_totals[name], 2)
 
     for p in products:
         name = p["name"]
@@ -415,9 +440,15 @@ def api_download():
     # 去掉 member 字段，标注收款方式
     member = payment.get("member", 0)
     payment = {k: v for k, v in payment.items() if k != "member"}
-    cash_product_names = get_cash_products(session, user_id, target_date)
+    cash_product_names, product_actual_totals = get_cash_products(session, user_id, target_date)
     def fmt(v):
         return str(int(v)) if v == int(v) else str(v)
+
+    # 用每个商品的实收金额覆盖原价
+    for p in products:
+        name = p["name"]
+        if product_actual_totals and name in product_actual_totals:
+            p["total"] = round(product_actual_totals[name], 2)
 
     for p in products:
         name = p["name"]
