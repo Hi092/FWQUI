@@ -384,14 +384,14 @@ def api_report():
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            cash_amt = cp["cash"]
+            wechat_amt = cp.get("wechat", 0)
+            cash_amt = cp.get("cash", 0)
             meituan_amt = cp.get("meituan", 0)
-            parts = ["微信"]
-            if cash_amt > 0:
-                parts.append(f"现金{fmt(cash_amt)}")
-            if meituan_amt > 0:
-                parts.append(f"美团{fmt(meituan_amt)}")
-            p["payment"] = "/".join(parts)
+            parts = []
+            if wechat_amt > 0: parts.append("微信")
+            if cash_amt > 0: parts.append(f"现金{fmt(cash_amt)}")
+            if meituan_amt > 0: parts.append(f"美团{fmt(meituan_amt)}")
+            p["payment"] = "/".join(parts) if parts else "微信"
         else:
             p["payment"] = "微信"
 
@@ -454,14 +454,14 @@ def api_download():
         name = p["name"]
         if cash_product_names and name in cash_product_names:
             cp = cash_product_names[name]
-            cash_amt = cp["cash"]
+            wechat_amt = cp.get("wechat", 0)
+            cash_amt = cp.get("cash", 0)
             meituan_amt = cp.get("meituan", 0)
-            parts = ["微信"]
-            if cash_amt > 0:
-                parts.append(f"现金{fmt(cash_amt)}")
-            if meituan_amt > 0:
-                parts.append(f"美团{fmt(meituan_amt)}")
-            p["payment"] = "/".join(parts)
+            parts = []
+            if wechat_amt > 0: parts.append("微信")
+            if cash_amt > 0: parts.append(f"现金{fmt(cash_amt)}")
+            if meituan_amt > 0: parts.append(f"美团{fmt(meituan_amt)}")
+            p["payment"] = "/".join(parts) if parts else "微信"
         else:
             p["payment"] = "微信"
 
