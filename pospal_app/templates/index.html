@@ -274,7 +274,7 @@ function renderDashboard(data) {
     var total = payment && payment.total ? payment.total.toFixed(0) : 0;
     html += '</tbody></table>' +
       '<div style="padding:12px 16px;text-align:right;font-weight:600;font-size:14px;color:#333;">' +
-        '微信：' + wechat + '　现金：' + cash + (meituan > 0 ? '　美团：' + meituan : '') + '　合计：' + total +
+        (wechat > 0 ? '微信：' + wechat + '　' : '') + (cash > 0 ? '现金：' + cash + '　' : '') + (meituan > 0 ? '美团：' + meituan + '　' : '') + '合计：' + total +
       '</div></div>';
   } else {
     html += '<div class="empty">暂无销售数据</div>';

@@ -282,17 +282,15 @@ def generate_excel(products, target_date, payment):
             cell.alignment = center
 
     r = len(products) + 4
-    ws.cell(row=r, column=6, value="微信：").font = Font(bold=True)
-    ws.cell(row=r, column=7, value=int(payment["wechat"]))
-    ws.cell(row=r + 1, column=6, value="现金：").font = Font(bold=True)
-    ws.cell(row=r + 1, column=7, value=int(payment["cash"]))
     offset = 0
-    if int(payment.get("meituan", 0)) > 0:
-        ws.cell(row=r + 2, column=6, value="美团：").font = Font(bold=True)
-        ws.cell(row=r + 2, column=7, value=int(payment.get("meituan", 0)))
-        offset = 1
-    ws.cell(row=r + 2 + offset, column=6, value="合计：").font = Font(bold=True)
-    ws.cell(row=r + 2 + offset, column=7, value=int(payment["total"]))
+    for label, key in [("微信", "wechat"), ("现金", "cash"), ("美团", "meituan")]:
+        val = int(payment.get(key, 0))
+        if val > 0:
+            ws.cell(row=r + offset, column=6, value=f"{label}：").font = Font(bold=True)
+            ws.cell(row=r + offset, column=7, value=val)
+            offset += 1
+    ws.cell(row=r + offset, column=6, value="合计：").font = Font(bold=True)
+    ws.cell(row=r + offset, column=7, value=int(payment["total"]))
 
     for col, w in {1: 8, 2: 16, 3: 36, 4: 10, 5: 8, 6: 12, 7: 12, 8: 14}.items():
         ws.column_dimensions[get_column_letter(col)].width = w
