@@ -32,6 +32,7 @@ DEFAULT_USER_ID = "4899673"
 
 SESSION_CACHE = {"session": None, "user_id": None, "expire": None}
 REPORT_CACHE = {}
+CACHE_MAX = 50  # 最大缓存条数
 
 
 def safe_float(text):
@@ -414,6 +415,14 @@ def api_report():
             "verified": abs(total_sales - expected_all) <= 1
         }
     }
+
+    # 缓存超过上限时清理过期条目
+    if len(REPORT_CACHE) >= CACHE_MAX:
+        now = datetime.datetime.now()
+        expired = [k for k, v in REPORT_CACHE.items() if now >= v["expire"]]
+        for k in expired:
+            del REPORT_CACHE[k]
+        logger.info(f"缓存清理: 删除{len(expired)}条过期数据")
 
     REPORT_CACHE[cache_key] = {"data": result, "expire": datetime.datetime.now() + datetime.timedelta(minutes=5)}
     return jsonify(result)
