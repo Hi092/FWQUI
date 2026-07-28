@@ -107,7 +107,7 @@ def create_session():
 def get_product_sales(session, user_id, target_date):
     begin = target_date.strftime("%Y.%m.%d 00:00:00")
     end = target_date.strftime("%Y.%m.%d 23:59:59")
-    body = (f"groupByArtNo=false&keyword=&userIds%5B%5D={user_id}&isSellWell=1"
+    body = (f"groupByArtNo=false&keyword=&userIds%5B%5D={user_id}&isSellWell=1&isCustomer=false"
             f"&beginDateTime={requests.utils.quote(begin)}&endDateTime={requests.utils.quote(end)}"
             f"&pageIndex=1&pageSize=500")
     headers = {"Content-Type": "application/x-www-form-urlencoded", "Referer": f"{BASE_URL}/ReportV2/ProductSale", "X-Requested-With": "XMLHttpRequest"}
@@ -128,10 +128,10 @@ def get_product_sales(session, user_id, target_date):
             name = tds[3].get_text(strip=True)
             unit = tds[7].get_text(strip=True)
             qty = safe_int(tds[12].get_text(strip=True))
-            total = safe_float(tds[13].get_text(strip=True))
+            total = safe_float(tds[15].get_text(strip=True))
             if not name or qty <= 0:
                 continue
-            unit_price = round(total / qty, 2)
+            unit_price = safe_float(tds[13].get_text(strip=True))
             products.append({"name": name, "unit": unit, "qty": qty, "unit_price": unit_price, "total": total})
         except Exception as e:
             logger.warning(f"商品解析失败: {e}")
@@ -195,6 +195,7 @@ def get_cash_products(session, user_id, target_date):
     current_meituan = 0
     current_ticket_actual = 0
 
+    is_member_ticket = False
     for row in rows:
         classes = row.get("class", [])
 
@@ -209,16 +210,21 @@ def get_cash_products(session, user_id, target_date):
                         product_payments[name] = {"cash": 0, "wechat": 0, "meituan": 0}
                     scaled = actual * scale
                     if pay_total > 0:
-                        product_payments[name]["cash"] += current_cash * (scaled / pay_total)
-                        product_payments[name]["wechat"] += current_wechat * (scaled / pay_total)
-                        product_payments[name]["meituan"] += current_meituan * (scaled / pay_total)
+                        product_payments[name]["cash"] += round(current_cash * (scaled / pay_total), 2)
+                        product_payments[name]["wechat"] += round(current_wechat * (scaled / pay_total), 2)
+                        product_payments[name]["meituan"] += round(current_meituan * (scaled / pay_total), 2)
 
+            # 检查是否是会员订单
+            text = row.get_text(strip=True)
+            if "MF-VIP" in text or "储值卡" in text:
+                is_member_ticket = True
+            else:
+                is_member_ticket = False
+            
             current_products = []
             current_cash = 0
             current_wechat = 0
             current_meituan = 0
-            current_ticket_actual = 0
-
             # 读票头的实收金额 td[8]
             tds = row.find_all("td")
             if len(tds) > 8:
@@ -226,7 +232,6 @@ def get_cash_products(session, user_id, target_date):
                     current_ticket_actual = float(tds[8].get_text(strip=True))
                 except:
                     pass
-
         elif "ticketItemRow" in classes:
             tds = row.find_all("td")
             text = row.get_text(strip=True)
@@ -244,6 +249,8 @@ def get_cash_products(session, user_id, target_date):
                         current_wechat += amount
 
             elif len(tds) == 8:
+                if is_member_ticket:
+                    continue  # 跳过会员订单的商品
                 product_text = tds[1].get_text(strip=True)
                 if "(" in product_text and ")" in product_text:
                     name = product_text.split("(")[0].strip()
