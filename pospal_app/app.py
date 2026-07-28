@@ -380,7 +380,8 @@ def api_report():
     # 获取每个商品的收款方式和实收金额
     cash_product_names, product_actual_totals = get_cash_products(session, user_id, target_date)
     def fmt(v):
-        return str(round(v))
+        rounded = round(v)
+        return str(rounded) if abs(v - rounded) < 0.01 else str(round(v, 2))
 
     # 用每个商品的实收金额覆盖原价
     for p in products:
@@ -458,7 +459,8 @@ def api_download():
     payment = {k: v for k, v in payment.items() if k != "member"}
     cash_product_names, product_actual_totals = get_cash_products(session, user_id, target_date)
     def fmt(v):
-        return str(round(v))
+        rounded = round(v)
+        return str(rounded) if abs(v - rounded) < 0.01 else str(round(v, 2))
 
     # 用每个商品的实收金额覆盖原价
     for p in products:
