@@ -132,7 +132,7 @@ def get_product_sales(session, user_id, target_date):
             total = safe_float(tds[15].get_text(strip=True))
             if not name or qty <= 0:
                 continue
-            unit_price = safe_float(tds[13].get_text(strip=True))
+            unit_price = safe_float(tds[13].get_text(strip=True)) / qty if qty > 0 else 0
             products.append({"name": name, "unit": unit, "qty": qty, "unit_price": unit_price, "total": total})
         except Exception as e:
             logger.warning(f"商品解析失败: {e}")
